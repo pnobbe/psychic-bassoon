@@ -6,7 +6,7 @@ package com.example.simplertmp.io
  * @author Emmanuel Bourg
  * @since 1.7
  */
-class CircularBuffer(
+class CircularBuffer (
         /** Size of the buffer  */
         private val size: Int) {
 

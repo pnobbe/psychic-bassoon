@@ -20,21 +20,19 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
+import android.content.res.AssetFileDescriptor
 import android.graphics.Color
 import android.hardware.camera2.*
-import android.media.MediaCodec
-import android.media.MediaRecorder
-import android.media.MediaScannerConnection
-import android.net.LocalSocket
+import android.media.*
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.HandlerThread
-import android.os.ParcelFileDescriptor
-import android.system.ErrnoException
 import android.util.Log
 import android.util.Range
 import android.view.*
 import android.webkit.MimeTypeMap
+import androidx.annotation.RequiresApi
 import androidx.core.content.FileProvider
 import androidx.core.graphics.drawable.toDrawable
 import androidx.fragment.app.Fragment
@@ -51,17 +49,15 @@ import com.example.android.camera2.video.CameraActivity
 import com.example.android.camera2.video.R
 import com.example.simplertmp.DefaultRtmpPublisher
 import com.example.simplertmp.RtmpPublisher
-import com.example.simplertmp.io.CircularBuffer
 import com.example.simplertmp.io.ConnectCheckerRtmp
 import kotlinx.android.synthetic.main.fragment_camera.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
-import net.ossrs.rtmp.SrsFlvMuxer
-import java.io.*
+import java.io.File
 import java.lang.Exception
-import java.net.Socket
+import java.nio.ByteBuffer
 import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.coroutines.resume
@@ -72,8 +68,6 @@ class CameraFragment : Fragment(), ConnectCheckerRtmp {
 
     /** AndroidX navigation arguments */
     private val args: CameraFragmentArgs by navArgs()
-
-    private var rtmpPublisher: RtmpPublisher? = null
 
     /** Host's navigation controller */
     private val navController: NavController by lazy {
@@ -177,21 +171,91 @@ class CameraFragment : Fragment(), ConnectCheckerRtmp {
     /** Live data listener for changes in the device orientation relative to the camera */
     private lateinit var relativeOrientation: OrientationLiveData
 
+    @RequiresApi(Build.VERSION_CODES.P)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         lifecycleScope.launch(Dispatchers.IO) {
-            rtmpPublisher = DefaultRtmpPublisher(this@CameraFragment)
 
-            val muxer = SrsFlvMuxer(this@CameraFragment, rtmpPublisher!!)
-            muxer.start("rtmp://6079e764c259451f852f3c0351f4b584.channel.media.azure.net:1935/live/6ed11a02141b40788e293b4dad1f397c/default")
+            val publisher: RtmpPublisher = DefaultRtmpPublisher(this@CameraFragment)
+            if (publisher.connect("rtmps://849e080e22324e60b0db7f99f3654ace.channel.media.azure.net:2935/live/85719e7a53304a498cdec0d06145b719")) {
+                if (publisher.publish("live")) {
+                    println("Time to send frames")
+                    val srcFd: AssetFileDescriptor = resources.openRawResourceFd(R.raw.video)
 
+                    val extractor = MediaExtractor()
+                    extractor.setDataSource(srcFd.fileDescriptor, srcFd.startOffset, srcFd.length)
+
+                    for (i in 0 until extractor.trackCount) {
+                        val format = extractor.getTrackFormat(i)
+                        val mime = format.getString(MediaFormat.KEY_MIME)
+                        if (mime == MediaFormat.MIMETYPE_VIDEO_AVC || mime == MediaFormat.MIMETYPE_AUDIO_AAC) {
+                            extractor.selectTrack(i)
+                        }
+                    }
+
+                    val buf = ByteBuffer.allocate(2 * 1024 * 1024)
+                    val bufInfo = MediaCodec.BufferInfo()
+                    var framecount = 0
+                    var offset = 0
+
+                    try {
+                        while (extractor.readSampleData(buf, offset) > 0) {
+                            val trackIndex = extractor.sampleTrackIndex
+                            val presentationTimeUs = extractor.sampleTime
+                            bufInfo.offset = offset
+                            bufInfo.size = extractor.sampleSize.toInt()
+                            bufInfo.flags = extractor.sampleFlags
+
+
+                            if (bufInfo.size < 0) {
+                                Log.d(TAG, "Input EOS")
+                                bufInfo.size = 0
+                            } else {
+                                val keyframe = extractor.sampleFlags == MediaExtractor.SAMPLE_FLAG_SYNC
+                                bufInfo.presentationTimeUs = extractor.sampleTime
+                                // Send data
+                                when (extractor.getTrackFormat(extractor.sampleTrackIndex)
+                                    .getString(MediaFormat.KEY_MIME)) {
+                                    MediaFormat.MIMETYPE_AUDIO_AAC -> {
+                                        // Frame is audio
+                                        publisher.publishAudioData(
+                                            buf.array(), bufInfo.size, (bufInfo.presentationTimeUs / 1000).toInt()
+                                        )
+                                    }
+                                    MediaFormat.MIMETYPE_VIDEO_AVC -> {
+                                        // Frame is video
+                                        publisher.publishVideoData(
+                                            buf.array(), bufInfo.size, (bufInfo.presentationTimeUs / 1000).toInt()
+                                        )
+                                        Thread.sleep(42)
+                                    }
+                                    else                           -> {
+                                        Log.d(TAG, "Unknown frame type)")
+                                    }
+                                }
+
+
+                                extractor.advance()
+                                framecount++
+
+                                Log.d(
+                                    TAG,
+                                    "Frame: $framecount, PresentatiomTime: ${bufInfo.presentationTimeUs}, Flags: ${bufInfo.flags}, TrackIndex: $trackIndex, Size(bytes): ${bufInfo.size}"
+                                )
+                            }
+                        }
+                    } catch (e: Exception) {
+                        throw e
+                    }
+
+                    srcFd.close()
+                }
+            }
         }
     }
 
     override fun onCreateView(
-            inflater: LayoutInflater,
-            container: ViewGroup?,
-            savedInstanceState: Bundle?
+        inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
     ): View? = inflater.inflate(R.layout.fragment_camera, container, false)
 
     @SuppressLint("MissingPermission")
@@ -203,16 +267,15 @@ class CameraFragment : Fragment(), ConnectCheckerRtmp {
         viewFinder.holder.addCallback(object : SurfaceHolder.Callback {
             override fun surfaceDestroyed(holder: SurfaceHolder) = Unit
             override fun surfaceChanged(
-                    holder: SurfaceHolder,
-                    format: Int,
-                    width: Int,
-                    height: Int) = Unit
+                holder: SurfaceHolder, format: Int, width: Int, height: Int
+            ) = Unit
 
             override fun surfaceCreated(holder: SurfaceHolder) {
 
                 // Selects appropriate preview size and configures view finder
                 val previewSize = getPreviewOutputSize(
-                        viewFinder.display, characteristics, SurfaceHolder::class.java)
+                    viewFinder.display, characteristics, SurfaceHolder::class.java
+                )
                 Log.d(TAG, "View finder size: ${viewFinder.width} x ${viewFinder.height}")
                 Log.d(TAG, "Selected preview size: $previewSize")
                 viewFinder.setAspectRatio(previewSize.width, previewSize.height)
@@ -244,7 +307,6 @@ class CameraFragment : Fragment(), ConnectCheckerRtmp {
         setInputSurface(surface)
     }
 
-
     /**
      * Begin all camera operations in a coroutine in the main thread. This function:
      * - Opens the camera
@@ -272,8 +334,7 @@ class CameraFragment : Fragment(), ConnectCheckerRtmp {
                 lifecycleScope.launch(Dispatchers.IO) {
                     recording = true
                     // Prevents screen rotation during the video recording
-                    requireActivity().requestedOrientation =
-                            ActivityInfo.SCREEN_ORIENTATION_LOCKED
+                    requireActivity().requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LOCKED
 
                     // Start recording repeating requests, which will stop the ongoing preview
                     //  repeating requests without having to explicitly call `session.stopRepeating`
@@ -297,8 +358,7 @@ class CameraFragment : Fragment(), ConnectCheckerRtmp {
                 lifecycleScope.launch(Dispatchers.IO) {
 
                     // Unlocks screen rotation after recording finished
-                    requireActivity().requestedOrientation =
-                            ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                    requireActivity().requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
 
                     // Requires recording of at least MIN_REQUIRED_RECORDING_TIME_MILLIS
                     val elapsedTimeMillis = System.currentTimeMillis() - recordingStartMillis
@@ -314,19 +374,17 @@ class CameraFragment : Fragment(), ConnectCheckerRtmp {
 
                     // Broadcasts the media file to the rest of the system
                     MediaScannerConnection.scanFile(
-                            view.context, arrayOf(outputFile.absolutePath), null, null)
+                        view.context, arrayOf(outputFile.absolutePath), null, null
+                    )
 
                     // Launch external activity via intent to play video recorded using our provider
                     startActivity(Intent().apply {
                         action = Intent.ACTION_VIEW
-                        type = MimeTypeMap.getSingleton()
-                                .getMimeTypeFromExtension(outputFile.extension)
+                        type = MimeTypeMap.getSingleton().getMimeTypeFromExtension(outputFile.extension)
                         val authority = "${BuildConfig.APPLICATION_ID}.provider"
                         data = FileProvider.getUriForFile(view.context, authority, outputFile)
-                        flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                                Intent.FLAG_ACTIVITY_CLEAR_TOP
+                        flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_CLEAR_TOP
                     })
-
 
                     // Finishes our current camera screen
                     delay(CameraActivity.ANIMATION_SLOW_MILLIS)
@@ -340,9 +398,7 @@ class CameraFragment : Fragment(), ConnectCheckerRtmp {
     /** Opens the camera and returns the opened device (as the result of the suspend coroutine) */
     @SuppressLint("MissingPermission")
     private suspend fun openCamera(
-            manager: CameraManager,
-            cameraId: String,
-            handler: Handler? = null
+        manager: CameraManager, cameraId: String, handler: Handler? = null
     ): CameraDevice = suspendCancellableCoroutine { cont ->
         manager.openCamera(cameraId, object : CameraDevice.StateCallback() {
             override fun onOpened(device: CameraDevice) = cont.resume(device)
@@ -354,12 +410,12 @@ class CameraFragment : Fragment(), ConnectCheckerRtmp {
 
             override fun onError(device: CameraDevice, error: Int) {
                 val msg = when (error) {
-                    ERROR_CAMERA_DEVICE -> "Fatal (device)"
-                    ERROR_CAMERA_DISABLED -> "Device policy"
-                    ERROR_CAMERA_IN_USE -> "Camera in use"
-                    ERROR_CAMERA_SERVICE -> "Fatal (service)"
+                    ERROR_CAMERA_DEVICE      -> "Fatal (device)"
+                    ERROR_CAMERA_DISABLED    -> "Device policy"
+                    ERROR_CAMERA_IN_USE      -> "Camera in use"
+                    ERROR_CAMERA_SERVICE     -> "Fatal (service)"
                     ERROR_MAX_CAMERAS_IN_USE -> "Maximum cameras in use"
-                    else -> "Unknown"
+                    else                     -> "Unknown"
                 }
                 val exc = RuntimeException("Camera $cameraId error: ($error) $msg")
                 Log.e(TAG, exc.message, exc)
@@ -373,9 +429,7 @@ class CameraFragment : Fragment(), ConnectCheckerRtmp {
      * suspend coroutine)
      */
     private suspend fun createCaptureSession(
-            device: CameraDevice,
-            targets: List<Surface>,
-            handler: Handler? = null
+        device: CameraDevice, targets: List<Surface>, handler: Handler? = null
     ): CameraCaptureSession = suspendCoroutine { cont ->
 
         // Creates a capture session using the predefined targets, and defines a session state

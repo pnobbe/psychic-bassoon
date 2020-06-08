@@ -17,7 +17,7 @@ import java.util.*
  * @author francois
  */
 abstract class VariableBodyRtmpPacket(header: RtmpHeader) : RtmpPacket(header) {
-    protected var data: MutableList<AmfData>? = null
+    var data: MutableList<AmfData>? = null
 
     fun addData(string: String) {
         addData(AmfString(string))

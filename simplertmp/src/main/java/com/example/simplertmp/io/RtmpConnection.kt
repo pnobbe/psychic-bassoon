@@ -9,6 +9,7 @@ import com.example.simplertmp.amf.*
 import com.example.simplertmp.packets.*
 import java.io.*
 import java.net.SocketException
+import java.rmi.UnexpectedException
 import java.util.*
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.locks.ReentrantLock
@@ -18,7 +19,6 @@ import java.util.regex.Pattern
 import javax.net.ssl.SSLSocket
 import javax.net.ssl.SSLSocketFactory
 import kotlin.concurrent.withLock
-
 
 /**
  * Main RTMP connection implementation class
@@ -30,8 +30,8 @@ class RtmpConnection(private val connectCheckerRtmp: ConnectCheckerRtmp) : RtmpP
     private lateinit var host: String
     private var appName: String? = null
     private var streamName: String? = null
+    private var streamKey: String?  = null
     private var publishType: String? = null
-    private var swfUrl: String? = null
     private var tcUrl: String? = null
     private var pageUrl: String? = null
     private var socket: SSLSocket? = null
@@ -41,11 +41,9 @@ class RtmpConnection(private val connectCheckerRtmp: ConnectCheckerRtmp) : RtmpP
     private lateinit var outputStream: BufferedOutputStream
     private var rxPacketHandler: Thread? = null
 
-    @Volatile
-    private var connected = false
+    @Volatile private var connected = false
 
-    @Volatile
-    private var publishPermitted = false
+    @Volatile private var publishPermitted = false
     private val connectingLock = ReentrantLock()
     private val connectingLockCondition = connectingLock.newCondition()
     private val publishLock = ReentrantLock()
@@ -82,21 +80,14 @@ class RtmpConnection(private val connectCheckerRtmp: ConnectCheckerRtmp) : RtmpP
     }
 
     override fun connect(url: String): Boolean {
-        val rtmpMatcher = rtmpUrlPattern.matcher("rtmps://6079e764c259451f852f3c0351f4b584.channel.media.azure.net:2935/live/6ed11a02141b40788e293b4dad1f397c")
-        tlsEnabled = if (rtmpMatcher.matches()) {
-            rtmpMatcher.group(0).startsWith("rtmps")
-        } else {
-            connectCheckerRtmp.onConnectionFailedRtmp("Endpoint malformed, should be: rtmp://{ip}:{port}/{appname}/{streamname}")
-            return false
-        }
-        swfUrl = ""
-        pageUrl = ""
+        val rtmpMatcher = rtmpUrlPattern.matcher(url)
+        rtmpMatcher.matches()
         host = rtmpMatcher.group(1)
-        val portStr = rtmpMatcher.group(2)
-        port = portStr?.toInt() ?: 1935
+        port = rtmpMatcher.group(2)?.toInt() ?: 2935
         appName = rtmpMatcher.group(3)
         streamName = rtmpMatcher.group(4)
-        tcUrl = rtmpMatcher.group(0).substring(0, rtmpMatcher.group(0).length - streamName!!.length)
+        streamKey = "default"
+        tcUrl = url
 
         // socket connection
         Logger.getLogger(TAG).log(Level.INFO, "connect() called. Host: $host, port: $port, appName: $appName, publishPath: $streamName")
@@ -106,16 +97,15 @@ class RtmpConnection(private val connectCheckerRtmp: ConnectCheckerRtmp) : RtmpP
         }
         try {
             socket = (SSLSocketFactory.getDefault().createSocket(host, port) as SSLSocket).apply {
-                this.enabledProtocols = this.supporgittedProtocols.filter { it == "TLSv1.2" || it == "TLSv1.3" }.toTypedArray()
+                this.enabledProtocols =
+                    this.supportedProtocols.filter { it == "TLSv1.2" || it == "TLSv1.3" }.toTypedArray()
             }.also {
                 inputStream = BufferedInputStream(it.inputStream)
-                outputStream = BufferedOutputStream(it.outputStream)
+                outputStream = BufferedOutputStream(it.outputStream.buffered(10 * 1024 * 1024))
                 Logger.getLogger(TAG).log(Level.INFO, "connect(): socket connection established, doing handshake...")
                 handshake(inputStream, outputStream)
                 Logger.getLogger(TAG).log(Level.INFO, "connect(): handshake complete")
             }
-
-
         } catch (e: IOException) {
             Logger.getLogger(TAG).log(Level.SEVERE, e.message)
             connectCheckerRtmp.onConnectionFailedRtmp("Connect error, " + e.message)
@@ -139,14 +129,11 @@ class RtmpConnection(private val connectCheckerRtmp: ConnectCheckerRtmp) : RtmpP
             connectCheckerRtmp.onConnectionFailedRtmp("Already connected")
             return false
         }
-        if (user != null && password != null) {
-            sendConnect("?authmod=adobe&user=$user")
-        } else {
-            sendConnect("")
-        }
+        sendConnect()
+
         connectingLock.withLock {
             try {
-                connectingLockCondition.await(5, TimeUnit.SECONDS)
+                connectingLockCondition.await(10, TimeUnit.SECONDS)
             } catch (ex: InterruptedException) {
                 // do nothing
             }
@@ -158,32 +145,28 @@ class RtmpConnection(private val connectCheckerRtmp: ConnectCheckerRtmp) : RtmpP
         return connected
     }
 
-    private fun sendConnect(user: String) {
+    private fun sendConnect() {
         ChunkStreamInfo.markSessionTimestampTx()
         Logger.getLogger(TAG).log(Level.INFO, "rtmpConnect(): Building 'connect' invoke packet")
-        val chunkStreamInfo: ChunkStreamInfo = rtmpSessionInfo!!.getChunkStreamInfo(ChunkStreamInfo.RTMP_CID_OVER_STREAM.toInt())
+        val chunkStreamInfo: ChunkStreamInfo =
+            rtmpSessionInfo!!.getChunkStreamInfo(ChunkStreamInfo.RTMP_CID_OVER_STREAM.toInt())
         val invoke = Command("connect", ++transactionIdCounter, chunkStreamInfo)
-        assert(transactionIdCounter == 1)
+
+        if (transactionIdCounter != 1) throw UnexpectedException("TransactionID should be 1")
+
         invoke.header.messageStreamId = 0
         val args = AmfObject()
-        args.setProperty("app", appName + user)
+        args.setProperty("app", "$appName/$streamName")
         args.setProperty("flashVer", "FMLE/3.0 (compatible; Lavf58.29.100)")
         args.setProperty("type", "nonprivate")
-//        args.setProperty("swfUrl", swfUrl!!)
-        args.setProperty("tcUrl", tcUrl + user)
-//        args.setProperty("fpad", false)
-//        args.setProperty("capabilities", 239)
-//        args.setProperty("audioCodecs", 3191)
-//        args.setProperty("videoCodecs", 252)
-//        args.setProperty("videoFunction", 1)
-//        args.setProperty("pageUrl", pageUrl!!)
-//        args.setProperty("objectEncoding", 0)
+        args.setProperty("tcUrl", tcUrl!!)
         invoke.addData(args)
         sendRtmpPacket(invoke)
     }
 
-    private fun getAuthUserResult(user: String, password: String, salt: String?,
-                                  challenge: String?, opaque: String): String {
+    private fun getAuthUserResult(
+        user: String, password: String, salt: String?, challenge: String?, opaque: String
+    ): String {
         val challenge2 = String.format("%08x", Random().nextInt())
         var response = stringToMD5BASE64(user + salt + password)
         if (!opaque.isEmpty()) {
@@ -207,7 +190,8 @@ class RtmpConnection(private val connectCheckerRtmp: ConnectCheckerRtmp) : RtmpP
     private fun createStream(): Boolean {
         if (!connected || currentStreamId != 0) {
             connectCheckerRtmp.onConnectionFailedRtmp(
-                    "Create stream failed, connected= $connected, StreamId= $currentStreamId")
+                "Create stream failed, connected= $connected, StreamId= $currentStreamId"
+            )
             return false
         }
         netConnectionDescription = null
@@ -228,7 +212,8 @@ class RtmpConnection(private val connectCheckerRtmp: ConnectCheckerRtmp) : RtmpP
         sendRtmpPacket(FCPublish)
 
         Logger.getLogger(TAG).log(Level.INFO, "createStream(): Sending createStream command...")
-        val chunkStreamInfo: ChunkStreamInfo = rtmpSessionInfo!!.getChunkStreamInfo(ChunkStreamInfo.RTMP_CID_OVER_CONNECTION.toInt())
+        val chunkStreamInfo: ChunkStreamInfo =
+            rtmpSessionInfo!!.getChunkStreamInfo(ChunkStreamInfo.RTMP_CID_OVER_CONNECTION.toInt())
         // transactionId == 4
         val createStream = Command("createStream", ++transactionIdCounter, chunkStreamInfo)
         createStream.addData(AmfNull()) // command object: null for "createStream"
@@ -282,7 +267,7 @@ class RtmpConnection(private val connectCheckerRtmp: ConnectCheckerRtmp) : RtmpP
         ecmaArray.setProperty("duration", 0)
         ecmaArray.setProperty("width", videoWidth)
         ecmaArray.setProperty("height", videoHeight)
-        ecmaArray.setProperty("videocodecid", 7)
+//        ecmaArray.setProperty("videocodecid", 7)
         ecmaArray.setProperty("framerate", 30)
         ecmaArray.setProperty("videodatarate", 0)
         // @see FLV video_file_format_spec_v10_1.pdf
@@ -335,7 +320,6 @@ class RtmpConnection(private val connectCheckerRtmp: ConnectCheckerRtmp) : RtmpP
             Logger.getLogger(TAG).log(Level.SEVERE, "Shutdown socket $e")
         }
 
-
         // shutdown rxPacketHandler
         rxPacketHandler?.let {
             it.interrupt()
@@ -365,7 +349,6 @@ class RtmpConnection(private val connectCheckerRtmp: ConnectCheckerRtmp) : RtmpP
         publishPermitted = false
         netConnectionDescription = null
         tcUrl = null
-        swfUrl = null
         pageUrl = null
         appName = null
         streamName = null
@@ -438,48 +421,64 @@ class RtmpConnection(private val connectCheckerRtmp: ConnectCheckerRtmp) : RtmpP
                 if (rtmpPacket != null) {
                     //Log.d(TAG, "handleRxPacketLoop(): RTMP rx packet message type: " + rtmpPacket.getHeader().getMessageType());
                     when (rtmpPacket.header.messageType) {
-                        RtmpHeader.MessageType.ABORT -> rtmpSessionInfo!!.getChunkStreamInfo((rtmpPacket as Abort).chunkStreamId)
-                                .clearStoredChunks()
-                        RtmpHeader.MessageType.USER_CONTROL_MESSAGE -> {
+                        RtmpHeader.MessageType.ABORT                       -> rtmpSessionInfo!!.getChunkStreamInfo((rtmpPacket as Abort).chunkStreamId)
+                            .clearStoredChunks()
+                        RtmpHeader.MessageType.USER_CONTROL_MESSAGE        -> {
                             val user: UserControl = rtmpPacket as UserControl
                             when (user.type) {
                                 UserControl.Type.STREAM_BEGIN -> {
                                 }
                                 UserControl.Type.PING_REQUEST -> {
-                                    val channelInfo: ChunkStreamInfo? = rtmpSessionInfo?.getChunkStreamInfo(ChunkStreamInfo.RTMP_CID_PROTOCOL_CONTROL.toInt())
+                                    val channelInfo: ChunkStreamInfo? =
+                                        rtmpSessionInfo?.getChunkStreamInfo(ChunkStreamInfo.RTMP_CID_PROTOCOL_CONTROL.toInt())
                                     Logger.getLogger(TAG).log(Level.INFO, "handleRxPacketLoop(): Sending PONG reply...")
                                     val pong = UserControl(user, channelInfo!!)
                                     sendRtmpPacket(pong)
                                 }
-                                UserControl.Type.STREAM_EOF -> Logger.getLogger(TAG).log(Level.INFO, "handleRxPacketLoop(): Stream EOF reached, closing RTMP writer...")
-                                else -> {
+                                UserControl.Type.STREAM_EOF   -> Logger.getLogger(TAG)
+                                    .log(Level.INFO, "handleRxPacketLoop(): Stream EOF reached, closing RTMP writer...")
+                                else                          -> {
                                 }
                             }
                         }
                         RtmpHeader.MessageType.WINDOW_ACKNOWLEDGEMENT_SIZE -> {
                             val windowAckSize: WindowAckSize = rtmpPacket as WindowAckSize
                             val size: Int = windowAckSize.acknowledgementWindowSize
-                            Logger.getLogger(TAG).log(Level.INFO, "handleRxPacketLoop(): Setting acknowledgement window size: $size")
+                            Logger.getLogger(TAG)
+                                .log(Level.INFO, "handleRxPacketLoop(): Setting acknowledgement window size: $size")
                             rtmpSessionInfo?.setAcknowledgmentWindowSize(size)
                         }
-                        RtmpHeader.MessageType.SET_PEER_BANDWIDTH -> {
+                        RtmpHeader.MessageType.SET_PEER_BANDWIDTH          -> {
                             rtmpSessionInfo?.setAcknowledgmentWindowSize(socket!!.sendBufferSize)
                             val acknowledgementWindowsize: Int = rtmpSessionInfo!!.acknowledgementWindowSize
-                            val chunkStreamInfo: ChunkStreamInfo = rtmpSessionInfo!!.getChunkStreamInfo(ChunkStreamInfo.RTMP_CID_PROTOCOL_CONTROL.toInt())
-                            Logger.getLogger(TAG).log(Level.INFO, "handleRxPacketLoop(): Send acknowledgement window size: $acknowledgementWindowsize")
+                            val chunkStreamInfo: ChunkStreamInfo =
+                                rtmpSessionInfo!!.getChunkStreamInfo(ChunkStreamInfo.RTMP_CID_PROTOCOL_CONTROL.toInt())
+                            Logger.getLogger(TAG)
+                                .log(
+                                    Level.INFO,
+                                    "handleRxPacketLoop(): Send acknowledgement window size: $acknowledgementWindowsize"
+                                )
                             sendRtmpPacket(WindowAckSize(acknowledgementWindowsize, chunkStreamInfo))
                             // Set socket option. This line could produce bps calculation problems.
                             socket!!.sendBufferSize = acknowledgementWindowsize
                         }
-                        RtmpHeader.MessageType.COMMAND_AMF0 -> handleRxInvoke(rtmpPacket as Command)
-                        else -> Logger.getLogger(TAG).log(Level.INFO, "handleRxPacketLoop(): Not handling unimplemented/unknown packet of type: ${rtmpPacket.header.messageType}")
+                        RtmpHeader.MessageType.COMMAND_AMF0                -> handleRxInvoke(rtmpPacket as Command)
+                        else                                               -> Logger.getLogger(TAG)
+                            .log(
+                                Level.INFO,
+                                "handleRxPacketLoop(): Not handling unimplemented/unknown packet of type: ${rtmpPacket.header.messageType}"
+                            )
                     }
                 }
             } catch (eof: EOFException) {
                 Thread.currentThread().interrupt()
             } catch (e: IOException) {
                 connectCheckerRtmp.onConnectionFailedRtmp("Error reading packet: " + e.message)
-                Logger.getLogger(TAG).log(Level.SEVERE, "Caught SocketException while reading/decoding packet, shutting down: ${e.message}")
+                Logger.getLogger(TAG)
+                    .log(
+                        Level.SEVERE,
+                        "Caught SocketException while reading/decoding packet, shutting down: ${e.message}"
+                    )
                 Thread.currentThread().interrupt()
             }
         }
@@ -487,18 +486,23 @@ class RtmpConnection(private val connectCheckerRtmp: ConnectCheckerRtmp) : RtmpP
 
     private fun handleRxInvoke(invoke: Command) {
         when (invoke.commandName) {
-            "_error" -> try {
+            "_error"      -> try {
                 val description: String = ((invoke.array!![1] as AmfObject).getProperty(
-                        "description") as AmfString).value
+                    "description"
+                ) as AmfString).value
 
                 Logger.getLogger(TAG).log(Level.INFO, description)
 
                 if (description.contains("reason=authfailed")) {
                     connectCheckerRtmp.onAuthErrorRtmp()
                     connected = false
-                    synchronized(connectingLock) { connectingLockCondition.signalAll() }
-                } else if (user != null && password != null && description.contains("challenge=")
-                        && description.contains("salt=")) {
+                    connectingLock.withLock {
+                        connectingLockCondition.signalAll()
+                    }
+                } else if (user != null && password != null && description.contains("challenge=") && description.contains(
+                        "salt="
+                    )
+                ) {
                     onAuth = true
                     try {
                         shutdown(false)
@@ -513,29 +517,36 @@ class RtmpConnection(private val connectCheckerRtmp: ConnectCheckerRtmp) : RtmpP
                     inputStream = BufferedInputStream(socket!!.inputStream)
                     outputStream = BufferedOutputStream(socket!!.outputStream)
 
-                    Logger.getLogger(TAG).log(Level.INFO, "connect(): socket connection established, doing handshake...")
+                    Logger.getLogger(TAG)
+                        .log(Level.INFO, "connect(): socket connection established, doing handshake...")
                     salt = getSalt(description)
                     challenge = getChallenge(description)
                     opaque = getOpaque(description)
                     handshake(inputStream, outputStream)
                     rxPacketHandler = Thread(Runnable { handleRxPacketLoop() })
                     rxPacketHandler!!.start()
-                    sendConnect(getAuthUserResult(user!!, password!!, salt, challenge, opaque!!))
+//                    sendConnect(getAuthUserResult(user!!, password!!, salt, challenge, opaque!!))
                 } else if (description.contains("code=403") && user == null || password == null) {
                     connectCheckerRtmp.onAuthErrorRtmp()
                     connected = false
-                    synchronized(connectingLock) { connectingLockCondition.signalAll() }
+                    connectingLock.withLock {
+                        connectingLockCondition.signalAll()
+                    }
                 } else {
                     connectCheckerRtmp.onConnectionFailedRtmp(description)
                     connected = false
-                    synchronized(connectingLock) { connectingLockCondition.signalAll() }
+                    connectingLock.withLock {
+                        connectingLockCondition.signalAll()
+                    }
                 }
             } catch (e: Exception) {
                 connectCheckerRtmp.onConnectionFailedRtmp(e.message!!)
                 connected = false
-                synchronized(connectingLock) { connectingLockCondition.signalAll() }
+                connectingLock.withLock {
+                    connectingLockCondition.signalAll()
+                }
             }
-            "_result" -> {
+            "_result"     -> {
                 // This is the result of one of the methods invoked by us
                 val method: String? = rtmpSessionInfo?.takeInvokedCommand(invoke.transactionId)
 
@@ -548,10 +559,12 @@ class RtmpConnection(private val connectCheckerRtmp: ConnectCheckerRtmp) : RtmpP
                     // Capture server ip/pid/id information if any
                     // We can now send createStream commands
                     connected = true
-                    synchronized(connectingLock) { connectingLockCondition.signalAll() }
+                    connectingLock.withLock {
+                        connectingLockCondition.signalAll()
+                    }
                 } else if ("createStream".contains(method!!)) {
                     // Get stream id
-                    currentStreamId = (invoke.array?.get(1) as AmfNumber).value.toInt()
+                    currentStreamId = (invoke.data?.get(1) as AmfNumber).value.toInt()
                     Logger.getLogger(TAG).log(Level.INFO, "handleRxInvoke(): Stream ID to publish: $currentStreamId")
                     if (streamName != null && publishType != null) {
                         fmlePublish()
@@ -561,28 +574,35 @@ class RtmpConnection(private val connectCheckerRtmp: ConnectCheckerRtmp) : RtmpP
                 } else if ("FCPublish".contains(method)) {
                     Logger.getLogger(TAG).log(Level.INFO, "handleRxInvoke(): 'FCPublish'")
                 } else {
-                    Logger.getLogger(TAG).log(Level.INFO, "handleRxInvoke(): '_result0 message received for unknown method: $method'")
+                    Logger.getLogger(TAG)
+                        .log(Level.INFO, "handleRxInvoke(): '_result0 message received for unknown method: $method'")
                 }
             }
-            "onBWDone" -> Logger.getLogger(TAG).log(Level.INFO, "handleRxInvoke(): 'onBWDone'")
+            "onBWDone"    -> Logger.getLogger(TAG).log(Level.INFO, "handleRxInvoke(): 'onBWDone'")
             "onFCPublish" -> Logger.getLogger(TAG).log(Level.INFO, "handleRxInvoke(): 'onFCPublish'")
-            "onStatus" -> {
-                val code: String = ((invoke.array?.get(1) as AmfObject).getProperty("code") as AmfString).value
+            "onStatus"    -> {
+                val code: String = ((invoke.data?.get(1) as AmfObject).getProperty("code") as AmfString).value
                 Logger.getLogger(TAG).log(Level.INFO, "handleRxInvoke(): onStatus $code")
                 if (code == "NetStream.Publish.Start") {
                     onMetaData()
                     // We can now publish AV data
                     publishPermitted = true
-                    synchronized(publishLock) { publishLockCondition.signalAll() }
+                    publishLock.withLock {
+                        publishLockCondition.signalAll()
+                    }
                 } else if (code == "NetConnection.Connect.Rejected") {
                     netConnectionDescription = ((invoke.array?.get(1) as AmfObject).getProperty(
-                            "description") as AmfString).value
+                        "description"
+                    ) as AmfString).value
                     publishPermitted = false
-                    synchronized(publishLock) { publishLockCondition.signalAll() }
+                    publishLock.withLock {
+                        publishLockCondition.signalAll()
+                    }
                 }
             }
 
-            else -> Logger.getLogger(TAG).log(Level.INFO, "handleRxInvoke(): Unknown/unhandled server invoke: $invoke")
+            else          -> Logger.getLogger(TAG)
+                .log(Level.INFO, "handleRxInvoke(): Unknown/unhandled server invoke: $invoke")
 
         }
     }
@@ -601,5 +621,4 @@ class RtmpConnection(private val connectCheckerRtmp: ConnectCheckerRtmp) : RtmpP
         private const val TAG = "RtmpConnection"
         private val rtmpUrlPattern = Pattern.compile("^rtmps?://([^/:]+)(?::(\\d+))*/([^/]+)/?([^*]*)$")
     }
-
 }

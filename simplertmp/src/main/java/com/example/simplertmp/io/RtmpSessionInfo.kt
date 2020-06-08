@@ -22,6 +22,7 @@ class RtmpSessionInfo {
     /** Default chunk size is 128 bytes  */
     var rxChunkSize = 128
     var txChunkSize = 128
+
     private val chunkChannels: MutableMap<Int, ChunkStreamInfo?> = HashMap<Int, ChunkStreamInfo?>()
     private val invokedMethods: MutableMap<Int, String> = ConcurrentHashMap()
     fun getChunkStreamInfo(chunkStreamId: Int): ChunkStreamInfo {
