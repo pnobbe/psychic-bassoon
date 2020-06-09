@@ -150,7 +150,7 @@ class RtmpHeader {
         AGGREGATE_MESSAGE(0x16);
 
         /** Returns the value of this chunk type  */
-        val value: Byte
+        val value: Byte = value.toByte()
 
         companion object {
             private val quickLookupMap: MutableMap<Byte, MessageType> = HashMap()
@@ -170,9 +170,6 @@ class RtmpHeader {
             }
         }
 
-        init {
-            this.value = value.toByte()
-        }
     }
 
     enum class ChunkType(byteValue: Int) {
@@ -233,8 +230,8 @@ class RtmpHeader {
     }
 
     @Throws(IOException::class)
-    private fun readHeaderImpl(`in`: InputStream, rtmpSessionInfo: RtmpSessionInfo) {
-        val basicHeaderByte = `in`.read()
+    private fun readHeaderImpl(input: InputStream, rtmpSessionInfo: RtmpSessionInfo) {
+        val basicHeaderByte = input.read()
         if (basicHeaderByte == -1) {
             throw EOFException("Unexpected EOF while reading RTMP packet basic header")
         }
@@ -244,18 +241,18 @@ class RtmpHeader {
             ChunkType.TYPE_0_FULL -> {
                 //  b00 = 12 byte header (full header)
                 // Read bytes 1-3: Absolute timestamp
-                absoluteTimestamp = readUnsignedInt24(`in`)
+                absoluteTimestamp = readUnsignedInt24(input)
                 timestampDelta = 0
                 // Read bytes 4-6: Packet length
-                packetLength = readUnsignedInt24(`in`)
+                packetLength = readUnsignedInt24(input)
                 // Read byte 7: Message type ID
-                messageType = MessageType.valueOf(`in`.read().toByte())
+                messageType = MessageType.valueOf(input.read().toByte())
                 // Read bytes 8-11: Message stream ID (apparently little-endian order)
                 val messageStreamIdBytes = ByteArray(4)
-                readBytesUntilFull(`in`, messageStreamIdBytes)
+                readBytesUntilFull(input, messageStreamIdBytes)
                 messageStreamId = toUnsignedInt32LittleEndian(messageStreamIdBytes)
                 // Read bytes 1-4: Extended timestamp
-                extendedTimestamp = if (absoluteTimestamp >= 0xffffff) readUnsignedInt32(`in`) else 0
+                extendedTimestamp = if (absoluteTimestamp >= 0xffffff) readUnsignedInt32(input) else 0
                 if (extendedTimestamp != 0) {
                     absoluteTimestamp = extendedTimestamp
                 }
@@ -263,13 +260,13 @@ class RtmpHeader {
             ChunkType.TYPE_1_RELATIVE_LARGE -> {
                 // b01 = 8 bytes - like type 0. not including message stream ID (4 last bytes)
                 // Read bytes 1-3: Timestamp delta
-                timestampDelta = readUnsignedInt24(`in`)
+                timestampDelta = readUnsignedInt24(input)
                 // Read bytes 4-6: Packet length
-                packetLength = readUnsignedInt24(`in`)
+                packetLength = readUnsignedInt24(input)
                 // Read byte 7: Message type ID
-                messageType = MessageType.valueOf(`in`.read().toByte())
+                messageType = MessageType.valueOf(input.read().toByte())
                 // Read bytes 1-4: Extended timestamp delta
-                extendedTimestamp = if (timestampDelta >= 0xffffff) readUnsignedInt32(`in`) else 0
+                extendedTimestamp = if (timestampDelta >= 0xffffff) readUnsignedInt32(input) else 0
                 val prevHeader: RtmpHeader? = rtmpSessionInfo.getChunkStreamInfo(chunkStreamId).prevHeaderRx()
                 if (prevHeader != null) {
                     messageStreamId = prevHeader.messageStreamId
@@ -282,9 +279,9 @@ class RtmpHeader {
             ChunkType.TYPE_2_RELATIVE_TIMESTAMP_ONLY -> {
                 // b10 = 4 bytes - Basic Header and timestamp (3 bytes) are included
                 // Read bytes 1-3: Timestamp delta
-                timestampDelta = readUnsignedInt24(`in`)
+                timestampDelta = readUnsignedInt24(input)
                 // Read bytes 1-4: Extended timestamp delta
-                extendedTimestamp = if (timestampDelta >= 0xffffff) readUnsignedInt32(`in`) else 0
+                extendedTimestamp = if (timestampDelta >= 0xffffff) readUnsignedInt32(input) else 0
                 rtmpSessionInfo.getChunkStreamInfo(chunkStreamId).prevHeaderRx()?.let {
                     packetLength = it.packetLength
                     messageType = it.messageType
@@ -296,7 +293,7 @@ class RtmpHeader {
                 // b11 = 1 byte: basic header only
                 rtmpSessionInfo.getChunkStreamInfo(chunkStreamId).prevHeaderRx()?.let {
                 // Read bytes 1-4: Extended timestamp
-                extendedTimestamp = if (it.timestampDelta >= 0xffffff) readUnsignedInt32(`in`) else 0
+                extendedTimestamp = if (it.timestampDelta >= 0xffffff) readUnsignedInt32(input) else 0
                 timestampDelta = if (extendedTimestamp != 0) 0xffffff else it.timestampDelta
                 packetLength = it.packetLength
                 messageType = it.messageType
@@ -371,9 +368,9 @@ class RtmpHeader {
         private const val TAG = "RtmpHeader"
 
         @Throws(IOException::class)
-        fun readHeader(`in`: InputStream, rtmpSessionInfo: RtmpSessionInfo): RtmpHeader {
+        fun readHeader(input: InputStream, rtmpSessionInfo: RtmpSessionInfo): RtmpHeader {
             val rtmpHeader = RtmpHeader()
-            rtmpHeader.readHeaderImpl(`in`, rtmpSessionInfo)
+            rtmpHeader.readHeaderImpl(input, rtmpSessionInfo)
             return rtmpHeader
         }
     }

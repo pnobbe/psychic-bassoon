@@ -53,11 +53,11 @@ class ChunkStreamInfo {
     /** @return `true` if all packet data has been stored, or `false` if not
      */
     @Throws(IOException::class)
-    fun storePacketChunk(`in`: InputStream?, chunkSize: Int): Boolean {
+    fun storePacketChunk(input: InputStream?, chunkSize: Int): Boolean {
         val remainingBytes = prevHeaderRx!!.packetLength - baos.size()
         val chunk = ByteArray(remainingBytes.coerceAtMost(chunkSize))
-        if (`in` != null) {
-            Util.readBytesUntilFull(`in`, chunk)
+        if (input != null) {
+            Util.readBytesUntilFull(input, chunk)
         }
         baos.write(chunk)
         return baos.size() == prevHeaderRx!!.packetLength

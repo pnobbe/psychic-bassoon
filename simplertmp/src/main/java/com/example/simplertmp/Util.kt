@@ -15,27 +15,27 @@ object Util {
     private const val HEXES = "0123456789ABCDEF"
 
     @Throws(IOException::class)
-    fun writeUnsignedInt32(out: OutputStream, value: Int) {
-        out.write(value ushr 24)
-        out.write(value ushr 16)
-        out.write(value ushr 8)
-        out.write(value)
+    fun writeUnsignedInt32(output: OutputStream, value: Int) {
+        output.write(value ushr 24)
+        output.write(value ushr 16)
+        output.write(value ushr 8)
+        output.write(value)
     }
 
     @Throws(IOException::class)
-    fun readUnsignedInt32(`in`: InputStream): Int {
-        return `in`.read() and 0xff shl 24 or (`in`.read() and 0xff shl 16) or (`in`.read() and 0xff shl 8) or (`in`
+    fun readUnsignedInt32(input: InputStream): Int {
+        return input.read() and 0xff shl 24 or (input.read() and 0xff shl 16) or (input.read() and 0xff shl 8) or (input
                 .read() and 0xff)
     }
 
     @Throws(IOException::class)
-    fun readUnsignedInt24(`in`: InputStream): Int {
-        return `in`.read() and 0xff shl 16 or (`in`.read() and 0xff shl 8) or (`in`.read() and 0xff)
+    fun readUnsignedInt24(input: InputStream): Int {
+        return input.read() and 0xff shl 16 or (input.read() and 0xff shl 8) or (input.read() and 0xff)
     }
 
     @Throws(IOException::class)
-    fun readUnsignedInt16(`in`: InputStream): Int {
-        return `in`.read() and 0xff shl 8 or (`in`.read() and 0xff)
+    fun readUnsignedInt16(input: InputStream): Int {
+        return input.read() and 0xff shl 8 or (input.read() and 0xff)
     }
 
     @Throws(IOException::class)
@@ -100,12 +100,12 @@ object Util {
      * Reads bytes from the specified inputstream into the specified target buffer until it is filled up
      */
     @Throws(IOException::class)
-    fun readBytesUntilFull(`in`: InputStream, targetBuffer: ByteArray) {
+    fun readBytesUntilFull(input: InputStream, targetBuffer: ByteArray) {
         var totalBytesRead = 0
         var read: Int
         val targetBytes = targetBuffer.size
         do {
-            read = `in`.read(targetBuffer, totalBytesRead, targetBytes - totalBytesRead)
+            read = input.read(targetBuffer, totalBytesRead, targetBytes - totalBytesRead)
             totalBytesRead += if (read != -1) {
                 read
             } else {
@@ -130,16 +130,16 @@ object Util {
     }
 
     @Throws(IOException::class)
-    fun readDouble(`in`: InputStream): Double {
-        val bits = ((`in`.read() and 0xff).toLong() shl 56
-                or ((`in`.read() and 0xff).toLong() shl 48)
-                or ((`in`.read()
+    fun readDouble(input: InputStream): Double {
+        val bits = ((input.read() and 0xff).toLong() shl 56
+                or ((input.read() and 0xff).toLong() shl 48)
+                or ((input.read()
                 and 0xff).toLong() shl 40)
-                or ((`in`.read() and 0xff).toLong() shl 32)
-                or (`in`.read() and 0xff shl 24).toLong()
-                or (`in`.read() and 0xff shl 16).toLong()
-                or (`in`.read() and 0xff shl 8).toLong()
-                or (`in`.read() and 0xff).toLong())
+                or ((input.read() and 0xff).toLong() shl 32)
+                or (input.read() and 0xff shl 24).toLong()
+                or (input.read() and 0xff shl 16).toLong()
+                or (input.read() and 0xff shl 8).toLong()
+                or (input.read() and 0xff).toLong())
         return java.lang.Double.longBitsToDouble(bits)
     }
 

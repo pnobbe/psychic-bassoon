@@ -21,6 +21,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.res.AssetFileDescriptor
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.hardware.camera2.*
 import android.media.*
@@ -55,8 +57,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import java.io.ByteArrayOutputStream
 import java.io.File
-import java.lang.Exception
+import java.net.URL
 import java.nio.ByteBuffer
 import java.text.SimpleDateFormat
 import java.util.*
@@ -177,7 +180,7 @@ class CameraFragment : Fragment(), ConnectCheckerRtmp {
         lifecycleScope.launch(Dispatchers.IO) {
 
             val publisher: RtmpPublisher = DefaultRtmpPublisher(this@CameraFragment)
-            if (publisher.connect("rtmps://849e080e22324e60b0db7f99f3654ace.channel.media.azure.net:2935/live/85719e7a53304a498cdec0d06145b719")) {
+            if (publisher.connect("rtmp://10.0.2.2:1935/live/app")) {
                 if (publisher.publish("live")) {
                     println("Time to send frames")
                     val srcFd: AssetFileDescriptor = resources.openRawResourceFd(R.raw.video)
@@ -197,7 +200,7 @@ class CameraFragment : Fragment(), ConnectCheckerRtmp {
                     val bufInfo = MediaCodec.BufferInfo()
                     var framecount = 0
                     var offset = 0
-
+                    var keyframeCount = 0
                     try {
                         while (extractor.readSampleData(buf, offset) > 0) {
                             val trackIndex = extractor.sampleTrackIndex
@@ -218,30 +221,33 @@ class CameraFragment : Fragment(), ConnectCheckerRtmp {
                                     .getString(MediaFormat.KEY_MIME)) {
                                     MediaFormat.MIMETYPE_AUDIO_AAC -> {
                                         // Frame is audio
+//                                        Log.d(
+//                                                TAG,
+//                                                "AUDIO Frame: $framecount, PresentatiomTime: ${bufInfo.presentationTimeUs}, Keyframe: ${bufInfo.flags}, TrackIndex: $trackIndex, Size(bytes): ${bufInfo.size}"
+//                                        )
                                         publisher.publishAudioData(
                                             buf.array(), bufInfo.size, (bufInfo.presentationTimeUs / 1000).toInt()
                                         )
                                     }
                                     MediaFormat.MIMETYPE_VIDEO_AVC -> {
                                         // Frame is video
+                                        if (bufInfo.flags == 1) { keyframeCount++ }
+                                        Log.d(
+                                                TAG,
+                                                "VIDEO Frame: $framecount, PresentatiomTime: ${bufInfo.presentationTimeUs}, Keyframe: ${bufInfo.flags}, TrackIndex: $trackIndex, Size(bytes): ${bufInfo.size}, Total keyframes: $keyframeCount"
+                                        )
                                         publisher.publishVideoData(
                                             buf.array(), bufInfo.size, (bufInfo.presentationTimeUs / 1000).toInt()
                                         )
+
                                         Thread.sleep(42)
                                     }
                                     else                           -> {
                                         Log.d(TAG, "Unknown frame type)")
                                     }
                                 }
-
-
                                 extractor.advance()
                                 framecount++
-
-                                Log.d(
-                                    TAG,
-                                    "Frame: $framecount, PresentatiomTime: ${bufInfo.presentationTimeUs}, Flags: ${bufInfo.flags}, TrackIndex: $trackIndex, Size(bytes): ${bufInfo.size}"
-                                )
                             }
                         }
                     } catch (e: Exception) {
@@ -249,13 +255,26 @@ class CameraFragment : Fragment(), ConnectCheckerRtmp {
                     }
 
                     srcFd.close()
+//                    val bmp = BitmapFactory.decodeResource(resources, R.raw.image)
+//                    val output = ByteArrayOutputStream()
+//                    bmp.compress(Bitmap.CompressFormat.JPEG, 0, output)
+//                    val data = output.toByteArray()
+//                    bmp.recycle()
+//                    var dts = 0
+//                    while (!Thread.interrupted()) {
+//                        publisher.publishVideoData(
+//                                data, data.size, dts
+//                        )
+//                        dts++
+//                        Thread.sleep(17)
+//                    }
                 }
             }
         }
     }
 
     override fun onCreateView(
-        inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
+            inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
     ): View? = inflater.inflate(R.layout.fragment_camera, container, false)
 
     @SuppressLint("MissingPermission")
@@ -267,14 +286,14 @@ class CameraFragment : Fragment(), ConnectCheckerRtmp {
         viewFinder.holder.addCallback(object : SurfaceHolder.Callback {
             override fun surfaceDestroyed(holder: SurfaceHolder) = Unit
             override fun surfaceChanged(
-                holder: SurfaceHolder, format: Int, width: Int, height: Int
+                    holder: SurfaceHolder, format: Int, width: Int, height: Int
             ) = Unit
 
             override fun surfaceCreated(holder: SurfaceHolder) {
 
                 // Selects appropriate preview size and configures view finder
                 val previewSize = getPreviewOutputSize(
-                    viewFinder.display, characteristics, SurfaceHolder::class.java
+                        viewFinder.display, characteristics, SurfaceHolder::class.java
                 )
                 Log.d(TAG, "View finder size: ${viewFinder.width} x ${viewFinder.height}")
                 Log.d(TAG, "Selected preview size: $previewSize")
@@ -374,7 +393,7 @@ class CameraFragment : Fragment(), ConnectCheckerRtmp {
 
                     // Broadcasts the media file to the rest of the system
                     MediaScannerConnection.scanFile(
-                        view.context, arrayOf(outputFile.absolutePath), null, null
+                            view.context, arrayOf(outputFile.absolutePath), null, null
                     )
 
                     // Launch external activity via intent to play video recorded using our provider
@@ -398,7 +417,7 @@ class CameraFragment : Fragment(), ConnectCheckerRtmp {
     /** Opens the camera and returns the opened device (as the result of the suspend coroutine) */
     @SuppressLint("MissingPermission")
     private suspend fun openCamera(
-        manager: CameraManager, cameraId: String, handler: Handler? = null
+            manager: CameraManager, cameraId: String, handler: Handler? = null
     ): CameraDevice = suspendCancellableCoroutine { cont ->
         manager.openCamera(cameraId, object : CameraDevice.StateCallback() {
             override fun onOpened(device: CameraDevice) = cont.resume(device)
@@ -410,12 +429,12 @@ class CameraFragment : Fragment(), ConnectCheckerRtmp {
 
             override fun onError(device: CameraDevice, error: Int) {
                 val msg = when (error) {
-                    ERROR_CAMERA_DEVICE      -> "Fatal (device)"
-                    ERROR_CAMERA_DISABLED    -> "Device policy"
-                    ERROR_CAMERA_IN_USE      -> "Camera in use"
-                    ERROR_CAMERA_SERVICE     -> "Fatal (service)"
+                    ERROR_CAMERA_DEVICE -> "Fatal (device)"
+                    ERROR_CAMERA_DISABLED -> "Device policy"
+                    ERROR_CAMERA_IN_USE -> "Camera in use"
+                    ERROR_CAMERA_SERVICE -> "Fatal (service)"
                     ERROR_MAX_CAMERAS_IN_USE -> "Maximum cameras in use"
-                    else                     -> "Unknown"
+                    else -> "Unknown"
                 }
                 val exc = RuntimeException("Camera $cameraId error: ($error) $msg")
                 Log.e(TAG, exc.message, exc)
@@ -429,7 +448,7 @@ class CameraFragment : Fragment(), ConnectCheckerRtmp {
      * suspend coroutine)
      */
     private suspend fun createCaptureSession(
-        device: CameraDevice, targets: List<Surface>, handler: Handler? = null
+            device: CameraDevice, targets: List<Surface>, handler: Handler? = null
     ): CameraCaptureSession = suspendCoroutine { cont ->
 
         // Creates a capture session using the predefined targets, and defines a session state

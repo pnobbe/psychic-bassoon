@@ -19,8 +19,13 @@ class SetChunkSize : RtmpPacket {
     override var size = 0
 
     constructor(header: RtmpHeader?) : super(header!!) {}
-    constructor(chunkSize: Int) : super(RtmpHeader(RtmpHeader.ChunkType.TYPE_1_RELATIVE_LARGE,
-            ChunkStreamInfo.RTMP_CID_PROTOCOL_CONTROL.toInt(), RtmpHeader.MessageType.SET_CHUNK_SIZE)) {
+    constructor(chunkSize: Int) : super(
+            RtmpHeader(
+                    RtmpHeader.ChunkType.TYPE_1_RELATIVE_LARGE,
+                    ChunkStreamInfo.RTMP_CID_PROTOCOL_CONTROL.toInt(),
+                    RtmpHeader.MessageType.SET_CHUNK_SIZE
+            )
+    ) {
         this.chunkSize = chunkSize
     }
 

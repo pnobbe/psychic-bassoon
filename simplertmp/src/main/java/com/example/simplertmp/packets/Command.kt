@@ -27,8 +27,18 @@ class Command : VariableBodyRtmpPacket {
 
     constructor(header: RtmpHeader) : super(header)
 
-    constructor(commandName: String, transactionId: Int, channelInfo: ChunkStreamInfo) : super(RtmpHeader(if (channelInfo.canReusePrevHeaderTx(RtmpHeader.MessageType.COMMAND_AMF0)) RtmpHeader.ChunkType.TYPE_1_RELATIVE_LARGE else RtmpHeader.ChunkType.TYPE_0_FULL,
-            ChunkStreamInfo.RTMP_CID_OVER_CONNECTION.toInt(), RtmpHeader.MessageType.COMMAND_AMF0)) {
+    constructor(commandName: String, transactionId: Int, channelInfo: ChunkStreamInfo) :
+            super(
+                    RtmpHeader(
+                            if (channelInfo.canReusePrevHeaderTx(RtmpHeader.MessageType.COMMAND_AMF0))
+                                RtmpHeader.ChunkType.TYPE_1_RELATIVE_LARGE
+                            else
+                                RtmpHeader.ChunkType.TYPE_0_FULL,
+                            ChunkStreamInfo.RTMP_CID_OVER_CONNECTION.toInt(),
+                            RtmpHeader.MessageType.COMMAND_AMF0
+                    )
+            )
+    {
         this.commandName = commandName
         this.transactionId = transactionId
     }
