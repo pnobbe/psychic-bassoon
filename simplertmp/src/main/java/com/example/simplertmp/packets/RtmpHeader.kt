@@ -359,9 +359,10 @@ class RtmpHeader {
     }
 
     private fun parseBasicHeader(basicHeaderByte: Byte) {
-        chunkType = ChunkType.valueOf(
-                (0xff and basicHeaderByte.toInt() ushr 6).toByte()) // 2 most significant bits define the chunk type
-        chunkStreamId = basicHeaderByte.toInt() and 0x3F // 6 least significant bits define chunk stream ID
+//        chunkType = ChunkType.valueOf(((0xff and basicHeaderByte.toInt()) ushr 6).toByte()) // 2 most significant bits define the chunk type
+//        chunkStreamId = basicHeaderByte.toInt() and 0x3F // 6 least significant bits define chunk stream ID
+        chunkType = ChunkType.valueOf(HeaderParser().parseChunkType(basicHeaderByte)) // 2 most significant bits define the chunk type
+        chunkStreamId = HeaderParser().parseChunkStreamId(basicHeaderByte).toInt()
     }
 
     companion object {
