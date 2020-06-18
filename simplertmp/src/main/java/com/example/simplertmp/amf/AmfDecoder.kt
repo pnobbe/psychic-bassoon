@@ -10,8 +10,8 @@ import java.io.InputStream
  */
 object AmfDecoder {
     @Throws(IOException::class)
-    fun readFrom(inputStream: InputStream): AmfData {
-        val amfTypeByte = inputStream.read().toByte()
+    fun readFrom(input: ByteArray): AmfData {
+        val amfTypeByte = input[0]
         val amfData: AmfData = when (val amfType: AmfType? = AmfType.valueOf(amfTypeByte)) {
             AmfType.NUMBER -> AmfNumber()
             AmfType.BOOLEAN -> AmfBoolean()
@@ -23,7 +23,7 @@ object AmfDecoder {
             AmfType.STRICT_ARRAY -> AmfArray()
             else -> throw IOException("Unknown/unimplemented AMF data type: $amfType")
         }
-        amfData.readFrom(inputStream)
+        amfData.readFrom(input.drop(1).toByteArray()) // Remove type byte, we don't need our data to parse it
         return amfData
     }
 }

@@ -30,7 +30,7 @@ class SetChunkSize : RtmpPacket {
     }
 
     @Throws(IOException::class)
-    override fun readBody(input: InputStream) {
+    override fun readBody(input: ByteArray) {
         // Value is received in the 4 bytes of the body
         chunkSize = Util.readUnsignedInt32(input)
     }

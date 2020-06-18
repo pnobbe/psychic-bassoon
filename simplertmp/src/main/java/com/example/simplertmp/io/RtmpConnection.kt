@@ -104,7 +104,7 @@ class RtmpConnection(private val connectCheckerRtmp: ConnectCheckerRtmp) : RtmpP
 //                this.enabledProtocols =
 //                    this.supportedProtocols.filter { it == "TLSv1.2" || it == "TLSv1.3" }.toTypedArray()
 //            }
-            socket =SocketFactory.getDefault().createSocket(host, port).also {
+            socket = SocketFactory.getDefault().createSocket(host, port).also {
                 inputStream = BufferedInputStream(it.inputStream)
                 outputStream = BufferedOutputStream(it.outputStream.buffered(10 * 1024 * 1024))
                 Logger.getLogger(TAG).log(Level.INFO, "connect(): socket connection established, doing handshake...")
@@ -429,7 +429,7 @@ class RtmpConnection(private val connectCheckerRtmp: ConnectCheckerRtmp) : RtmpP
                 // It will be blocked when no data in input stream buffer
                 val rtmpPacket: RtmpPacket? = rtmpDecoder?.readPacket(inputStream)
                 if (rtmpPacket != null) {
-                    //Log.d(TAG, "handleRxPacketLoop(): RTMP rx packet message type: " + rtmpPacket.getHeader().getMessageType());
+                    // Log.d(TAG, "handleRxPacketLoop(): RTMP rx packet message type: " + rtmpPacket.getHeader().getMessageType());
                     when (rtmpPacket.header.messageType) {
                         RtmpHeader.MessageType.ABORT -> rtmpSessionInfo!!.getChunkStreamInfo((rtmpPacket as Abort).chunkStreamId)
                                 .clearStoredChunks()
@@ -459,17 +459,22 @@ class RtmpConnection(private val connectCheckerRtmp: ConnectCheckerRtmp) : RtmpP
                             rtmpSessionInfo?.setAcknowledgmentWindowSize(size)
                         }
                         RtmpHeader.MessageType.SET_PEER_BANDWIDTH -> {
-                            val acknowledgementWindowsize: Int = rtmpSessionInfo!!.acknowledgementWindowSize
+                            val ackWindowSize: Int = rtmpSessionInfo!!.acknowledgementWindowSize
                             val chunkStreamInfo: ChunkStreamInfo =
                                     rtmpSessionInfo!!.getChunkStreamInfo(ChunkStreamInfo.RTMP_CID_PROTOCOL_CONTROL.toInt())
                             Logger.getLogger(TAG)
                                     .log(
                                             Level.INFO,
-                                            "handleRxPacketLoop(): Send acknowledgement window size: $acknowledgementWindowsize"
+                                            "handleRxPacketLoop(): Send acknowledgement window size: $ackWindowSize"
                                     )
-                            sendRtmpPacket(WindowAckSize(acknowledgementWindowsize, chunkStreamInfo))
+                            sendRtmpPacket(WindowAckSize(ackWindowSize, chunkStreamInfo))
                             // Set socket option. This line could produce bps calculation problems.
-                            socket!!.sendBufferSize = acknowledgementWindowsize
+                            socket!!.sendBufferSize = ackWindowSize
+                        }
+                        RtmpHeader.MessageType.SET_CHUNK_SIZE -> {
+                            val chunkSize = (rtmpPacket as SetChunkSize).chunkSize
+                            Logger.getLogger(TAG).log(Level.INFO, "readPacket(): Setting chunk size to: $chunkSize")
+                            rtmpSessionInfo!!.rxChunkSize = chunkSize
                         }
                         RtmpHeader.MessageType.COMMAND_AMF0 -> handleRxInvoke(rtmpPacket as Command)
                         else -> Logger.getLogger(TAG)
@@ -557,7 +562,7 @@ class RtmpConnection(private val connectCheckerRtmp: ConnectCheckerRtmp) : RtmpP
             }
             "_result" -> {
                 // This is the result of one of the methods invoked by us
-                val method: String? = rtmpSessionInfo?.takeInvokedCommand(invoke.transactionId)
+                val method: String = rtmpSessionInfo?.takeInvokedCommand(invoke.transactionId) ?: ""
 
                 Logger.getLogger(TAG).log(Level.INFO, "handleRxInvoke: Got result for invoked method: $method")
                 if ("connect" == method) {
@@ -571,7 +576,7 @@ class RtmpConnection(private val connectCheckerRtmp: ConnectCheckerRtmp) : RtmpP
                     connectingLock.withLock {
                         connectingLockCondition.signalAll()
                     }
-                } else if ("createStream".contains(method!!)) {
+                } else if ("createStream".contains(method)) {
                     // Get stream id
                     currentStreamId = (invoke.data?.get(1) as AmfNumber).value.toInt()
                     Logger.getLogger(TAG).log(Level.INFO, "handleRxInvoke(): Stream ID to publish: $currentStreamId")

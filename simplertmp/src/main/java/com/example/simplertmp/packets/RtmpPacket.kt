@@ -3,9 +3,9 @@ package com.example.simplertmp.packets
 import com.example.simplertmp.io.ChunkStreamInfo
 import java.io.ByteArrayOutputStream
 import java.io.IOException
-import java.io.InputStream
 import java.io.OutputStream
-
+import java.util.logging.Level
+import java.util.logging.Logger
 
 /**
  * @author francois, leo
@@ -16,7 +16,10 @@ abstract class RtmpPacket(val header: RtmpHeader) {
     abstract var size: Int
 
     @Throws(IOException::class)
-    abstract fun readBody(input: InputStream)
+    open fun readBody(input: ByteArray) {
+        Logger.getLogger(TAG).log(Level.INFO, "Packet has no readBody implementation")
+        return
+    }
 
     @Throws(IOException::class)
     protected abstract fun writeBody(output: OutputStream)
@@ -46,5 +49,9 @@ abstract class RtmpPacket(val header: RtmpHeader) {
             }
         }
         output.write(body, pos, length)
+    }
+
+    companion object {
+        private const val TAG = "RtmpPacket"
     }
 }

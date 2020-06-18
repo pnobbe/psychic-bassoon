@@ -192,13 +192,11 @@ class RtmpHeader {
         companion object {
             /** The full size (in bytes) of this RTMP header (including the basic header byte)  */
             private val quickLookupMap: MutableMap<Byte, ChunkType> = HashMap()
-            fun valueOf(chunkHeaderType: Byte): ChunkType? {
-                return if (quickLookupMap.containsKey(chunkHeaderType)) {
-                    quickLookupMap[chunkHeaderType]
-                } else {
-                    throw IllegalArgumentException(
-                            "Unknown chunk header type byte: " + toHexString(chunkHeaderType))
+            fun valueOf(chunkHeaderType: Byte): ChunkType {
+                quickLookupMap[chunkHeaderType]?.let {
+                    return it
                 }
+                        ?: throw IllegalArgumentException("Unknown chunk header type byte: " + toHexString(chunkHeaderType))
             }
 
             init {
@@ -218,12 +216,12 @@ class RtmpHeader {
     var absoluteTimestamp = 0
     var timestampDelta = -1
     var packetLength = 0
-    var messageType: MessageType? = null
+    lateinit var messageType: MessageType
     var messageStreamId = 0
     private var extendedTimestamp = 0
 
     constructor() {}
-    constructor(chunkType: ChunkType?, chunkStreamId: Int, messageType: MessageType?) {
+    constructor(chunkType: ChunkType, chunkStreamId: Int, messageType: MessageType) {
         this.chunkType = chunkType
         this.chunkStreamId = chunkStreamId
         this.messageType = messageType
@@ -246,7 +244,9 @@ class RtmpHeader {
                 // Read bytes 4-6: Packet length
                 packetLength = readUnsignedInt24(input)
                 // Read byte 7: Message type ID
-                messageType = MessageType.valueOf(input.read().toByte())
+                val type = input.read().toByte()
+                messageType = MessageType.valueOf(type)
+                        ?: throw IllegalArgumentException("No message type found with value $type")
                 // Read bytes 8-11: Message stream ID (apparently little-endian order)
                 val messageStreamIdBytes = ByteArray(4)
                 readBytesUntilFull(input, messageStreamIdBytes)
@@ -264,7 +264,9 @@ class RtmpHeader {
                 // Read bytes 4-6: Packet length
                 packetLength = readUnsignedInt24(input)
                 // Read byte 7: Message type ID
-                messageType = MessageType.valueOf(input.read().toByte())
+                val type = input.read().toByte()
+                messageType = MessageType.valueOf(type)
+                        ?: throw IllegalArgumentException("No message type found with value $type")
                 // Read bytes 1-4: Extended timestamp delta
                 extendedTimestamp = if (timestampDelta >= 0xffffff) readUnsignedInt32(input) else 0
                 val prevHeader: RtmpHeader? = rtmpSessionInfo.getChunkStreamInfo(chunkStreamId).prevHeaderRx()
@@ -292,13 +294,13 @@ class RtmpHeader {
             ChunkType.TYPE_3_RELATIVE_SINGLE_BYTE -> {
                 // b11 = 1 byte: basic header only
                 rtmpSessionInfo.getChunkStreamInfo(chunkStreamId).prevHeaderRx()?.let {
-                // Read bytes 1-4: Extended timestamp
-                extendedTimestamp = if (it.timestampDelta >= 0xffffff) readUnsignedInt32(input) else 0
-                timestampDelta = if (extendedTimestamp != 0) 0xffffff else it.timestampDelta
-                packetLength = it.packetLength
-                messageType = it.messageType
-                messageStreamId = it.messageStreamId
-                absoluteTimestamp = if (extendedTimestamp != 0) extendedTimestamp else it.absoluteTimestamp + timestampDelta
+                    // Read bytes 1-4: Extended timestamp
+                    extendedTimestamp = if (it.timestampDelta >= 0xffffff) readUnsignedInt32(input) else 0
+                    timestampDelta = if (extendedTimestamp != 0) 0xffffff else it.timestampDelta
+                    packetLength = it.packetLength
+                    messageType = it.messageType
+                    messageStreamId = it.messageStreamId
+                    absoluteTimestamp = if (extendedTimestamp != 0) extendedTimestamp else it.absoluteTimestamp + timestampDelta
                 }
             }
             else -> throw IOException("Invalid chunk type; basic header byte was: " + toHexString(
@@ -329,7 +331,7 @@ class RtmpHeader {
                 timestampDelta = chunkStreamInfo.markDeltaTimestampTx().toInt()
                 absoluteTimestamp = chunkStreamInfo.prevHeaderTx?.absoluteTimestamp?.plus(timestampDelta)
                         ?: 0
-                writeUnsignedInt24(out, if (absoluteTimestamp >= 0xffffff) 0xffffff else timestampDelta )
+                writeUnsignedInt24(out, if (absoluteTimestamp >= 0xffffff) 0xffffff else timestampDelta)
                 writeUnsignedInt24(out, packetLength)
                 out.write(messageType!!.value.toInt())
                 if (absoluteTimestamp >= 0xffffff) {
@@ -342,7 +344,7 @@ class RtmpHeader {
                 timestampDelta = chunkStreamInfo.markDeltaTimestampTx().toInt()
                 absoluteTimestamp = chunkStreamInfo.prevHeaderTx?.absoluteTimestamp?.plus(timestampDelta)
                         ?: 0
-                writeUnsignedInt24(out, if (absoluteTimestamp >= 0xffffff) 0xffffff else timestampDelta )
+                writeUnsignedInt24(out, if (absoluteTimestamp >= 0xffffff) 0xffffff else timestampDelta)
                 if (absoluteTimestamp >= 0xffffff) {
                     extendedTimestamp = absoluteTimestamp
                     writeUnsignedInt32(out, extendedTimestamp)
@@ -359,10 +361,8 @@ class RtmpHeader {
     }
 
     private fun parseBasicHeader(basicHeaderByte: Byte) {
-//        chunkType = ChunkType.valueOf(((0xff and basicHeaderByte.toInt()) ushr 6).toByte()) // 2 most significant bits define the chunk type
-//        chunkStreamId = basicHeaderByte.toInt() and 0x3F // 6 least significant bits define chunk stream ID
-        chunkType = ChunkType.valueOf(HeaderParser().parseChunkType(basicHeaderByte)) // 2 most significant bits define the chunk type
-        chunkStreamId = HeaderParser().parseChunkStreamId(basicHeaderByte).toInt()
+        chunkType = ChunkType.valueOf((0xff and basicHeaderByte.toInt() ushr 6).toByte()) // 2 most significant bits define the chunk type
+        chunkStreamId = basicHeaderByte.toInt() and 0x3F // 6 least significant bits define chunk stream ID
     }
 
     companion object {

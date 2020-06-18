@@ -17,18 +17,11 @@ class AmfBoolean(private var isValue: Boolean = false) : AmfData {
     }
 
     @Throws(IOException::class)
-    override fun readFrom(input: InputStream) {
-        isValue = input.read() == 0x01
+    override fun readFrom(input: ByteArray) {
+        isValue = input[0].toInt() == 0x01
     }
 
     override val size: Int
         get() = 2
 
-    companion object {
-        @Throws(IOException::class)
-        fun readBooleanFrom(input: InputStream): Boolean {
-            // Skip data type byte (we assume it's already read)
-            return input.read() == 0x01
-        }
-    }
 }

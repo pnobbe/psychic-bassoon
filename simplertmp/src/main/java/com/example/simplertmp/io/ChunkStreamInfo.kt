@@ -65,7 +65,8 @@ class ChunkStreamInfo {
 
     val storedPacketInputStream: ByteArrayInputStream
         get() {
-            val bis = ByteArrayInputStream(baos.toByteArray())
+            val copy = baos.toByteArray()
+            val bis = ByteArrayInputStream(copy)
             baos.reset()
             return bis
         }

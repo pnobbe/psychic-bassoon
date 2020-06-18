@@ -30,8 +30,8 @@ enum class AmfType(intValue: Int) {
 
     companion object {
         private val quickLookupMap: MutableMap<Byte, AmfType> = HashMap()
-        fun valueOf(amfTypeByte: Byte): AmfType? {
-            return quickLookupMap[amfTypeByte]
+        fun valueOf(amfTypeByte: Byte): AmfType {
+            quickLookupMap[amfTypeByte]?.let { return it } ?: throw ArrayIndexOutOfBoundsException("No enum found with value $amfTypeByte")
         }
 
         init {

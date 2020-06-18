@@ -54,10 +54,10 @@ class SetPeerBandwidth : RtmpPacket {
     }
 
     @Throws(IOException::class)
-    override fun readBody(input: InputStream) {
+    override fun readBody(input: ByteArray) {
         acknowledgementWindowSize = Util.readUnsignedInt32(input)
-        val index = input.read()
-        limitType = LimitType.values().first { it.intValue == index }
+        val type = input[4].toInt()
+        limitType = LimitType.values().first { it.intValue == type }
     }
 
     @Throws(IOException::class)

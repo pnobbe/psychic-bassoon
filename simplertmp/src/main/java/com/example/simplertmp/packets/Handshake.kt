@@ -139,7 +139,6 @@ class Handshake {
     fun writeC2(output: OutputStream) {
         Logger.getLogger(TAG).log(Level.INFO, "writeC2")
         // C2 is an echo of S1
-        checkNotNull(s1) { "C2 cannot be written without S1 being read first" }
         output.write(s1)
     }
 

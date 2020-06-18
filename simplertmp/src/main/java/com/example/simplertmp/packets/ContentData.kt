@@ -20,10 +20,8 @@ abstract class ContentData(header: RtmpHeader) : RtmpPacket(header) {
     }
 
     @Throws(IOException::class)
-    override fun readBody(input: InputStream) {
-        array = ByteArray(header.packetLength).also {
-            Util.readBytesUntilFull(input, it)
-        }
+    override fun readBody(input: ByteArray) {
+        array = input
     }
 
     /**

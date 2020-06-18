@@ -50,11 +50,12 @@ class Command : VariableBodyRtmpPacket {
     }
 
     @Throws(IOException::class)
-    override fun readBody(input: InputStream) {
+    override fun readBody(input: ByteArray) {
         // The command name and transaction ID are always present (AMF string followed by number)
         commandName = AmfString.readStringFrom(input, false)
-        transactionId = AmfNumber.readNumberFrom(input).toInt()
-        val bytesRead: Int = AmfString.sizeOf(commandName, false) + AmfNumber.size
+        var bytesRead: Int = AmfString.sizeOf(commandName, false)
+        transactionId = AmfNumber.readNumberFrom(input.drop(bytesRead).toByteArray()).toInt()
+        bytesRead += AmfNumber.size
         readVariableData(input, bytesRead)
     }
 

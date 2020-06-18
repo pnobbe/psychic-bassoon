@@ -1,8 +1,6 @@
 package com.example.simplertmp.amf
 
-import java.io.BufferedInputStream
 import java.io.IOException
-import java.io.InputStream
 import java.io.OutputStream
 import java.util.*
 
@@ -68,27 +66,24 @@ open class AmfObject : AmfData {
     }
 
     @Throws(IOException::class)
-    override fun readFrom(input: InputStream) {
-        // Skip data type byte (we assume it's already read)
-        size = 1
-        val markInputStream = if (input.markSupported()) input else BufferedInputStream(input)
-        while (true) {
+    override fun readFrom(input: ByteArray) {
+        size = 0
+        while (size <= input.size) {
             // Look for the 3-byte object end marker [0x00 0x00 0x09]
-            markInputStream.mark(3)
-            val endMarker = ByteArray(3)
-            markInputStream.read(endMarker)
-            if (endMarker[0] == OBJECT_END_MARKER[0] && endMarker[1] == OBJECT_END_MARKER[1] && endMarker[2] == OBJECT_END_MARKER[2]) {
+            if (
+                    input[size] == OBJECT_END_MARKER[0] &&
+                    input[size + 1] == OBJECT_END_MARKER[1] &&
+                    input[size + 2] == OBJECT_END_MARKER[2]
+            ) {
                 // End marker found
                 size += 3
                 return
             } else {
-                // End marker not found; reset the stream to the marked position and read an AMF property
-                markInputStream.reset()
-                // Read the property key...
-                val key: String = AmfString.readStringFrom(input, true)
+                // End marker not found; read the property key...
+                val key: String = AmfString.readStringFrom(input.drop(size).toByteArray(), true)
                 size += AmfString.sizeOf(key, true)
                 // ...and the property value
-                val value = AmfDecoder.readFrom(markInputStream)
+                val value = AmfDecoder.readFrom(input.drop(size).toByteArray())
                 size += value.size
                 properties[key] = value
             }

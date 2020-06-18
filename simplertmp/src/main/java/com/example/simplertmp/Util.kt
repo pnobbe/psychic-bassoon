@@ -24,8 +24,13 @@ object Util {
 
     @Throws(IOException::class)
     fun readUnsignedInt32(input: InputStream): Int {
-        return input.read() and 0xff shl 24 or (input.read() and 0xff shl 16) or (input.read() and 0xff shl 8) or (input
-                .read() and 0xff)
+        return input.read() and 0xff shl 24 or (input.read() and 0xff shl 16) or (input.read() and 0xff shl 8) or (input.read() and 0xff)
+    }
+
+    @Throws(IOException::class)
+    fun readUnsignedInt32(input: ByteArray): Int {
+        require(input.size >= 4) { "Not enough elements available to read a 32 bit integer" }
+        return input[0].toInt() and 0xff shl 24 or (input[1].toInt() and 0xff shl 16) or (input[2].toInt() and 0xff shl 8) or (input[3].toInt() and 0xff)
     }
 
     @Throws(IOException::class)
@@ -34,8 +39,20 @@ object Util {
     }
 
     @Throws(IOException::class)
+    fun readUnsignedInt24(input: ByteArray): Int {
+        require(input.size >= 3) { "Not enough elements available to read a 24 bit integer" }
+        return input[0].toInt() and 0xff shl 16 or (input[1].toInt() and 0xff shl 8) or (input[2].toInt() and 0xff)
+    }
+
+    @Throws(IOException::class)
     fun readUnsignedInt16(input: InputStream): Int {
         return input.read() and 0xff shl 8 or (input.read() and 0xff)
+    }
+
+    @Throws(IOException::class)
+    fun readUnsignedInt16(input: ByteArray): Int {
+        require(input.size >= 2) { "Not enough elements available to read a 16 bit integer" }
+        return input[0].toInt() and 0xff shl 8 or (input[1].toInt() and 0xff)
     }
 
     @Throws(IOException::class)
@@ -52,15 +69,11 @@ object Util {
     }
 
     fun toUnsignedInt32(bytes: ByteArray): Int {
-        return bytes[0].toInt() and 0xff shl 24 or (bytes[1].toInt() and 0xff shl 16) or ((bytes[2].toInt()
-                and 0xff) shl 8) or (bytes[3].toInt() and 0xff)
+        return bytes[0].toInt() and 0xff shl 24 or (bytes[1].toInt() and 0xff shl 16) or ((bytes[2].toInt() and 0xff) shl 8) or (bytes[3].toInt() and 0xff)
     }
 
     fun toUnsignedInt32LittleEndian(bytes: ByteArray): Int {
-        return (bytes[3].toInt() and 0xff shl 24
-                or (bytes[2].toInt() and 0xff shl 16)
-                or (bytes[1].toInt() and 0xff shl 8)
-                or (bytes[0].toInt() and 0xff))
+        return (bytes[3].toInt() and 0xff shl 24 or (bytes[2].toInt() and 0xff shl 16) or (bytes[1].toInt() and 0xff shl 8) or (bytes[0].toInt() and 0xff))
     }
 
     @Throws(IOException::class)
@@ -91,9 +104,7 @@ object Util {
     }
 
     fun toHexString(b: Byte): String {
-        return StringBuilder().append(HEXES[b.toInt() and 0xF0 shr 4])
-                .append(HEXES[b.toInt() and 0x0F])
-                .toString()
+        return StringBuilder().append(HEXES[b.toInt() and 0xF0 shr 4]).append(HEXES[b.toInt() and 0x0F]).toString()
     }
 
     /**
@@ -117,40 +128,46 @@ object Util {
     fun toByteArray(d: Double): ByteArray {
         val l = java.lang.Double.doubleToRawLongBits(d)
         return byteArrayOf(
-                (l shr 56 and 0xff).toByte(), (l shr 48 and 0xff).toByte(), (l shr 40 and 0xff).toByte(),
-                (l shr 32 and 0xff).toByte(), (l shr 24 and 0xff).toByte(), (l shr 16 and 0xff).toByte(),
-                (l shr 8 and 0xff).toByte(), (l and 0xff).toByte())
+            (l shr 56 and 0xff).toByte(),
+            (l shr 48 and 0xff).toByte(),
+            (l shr 40 and 0xff).toByte(),
+            (l shr 32 and 0xff).toByte(),
+            (l shr 24 and 0xff).toByte(),
+            (l shr 16 and 0xff).toByte(),
+            (l shr 8 and 0xff).toByte(),
+            (l and 0xff).toByte()
+        )
     }
 
     @Throws(IOException::class)
     fun unsignedInt32ToByteArray(value: Int): ByteArray {
         return byteArrayOf(
-                (value ushr 24).toByte(), (value ushr 16).toByte(), (value ushr 8).toByte(), value.toByte()
+            (value ushr 24).toByte(), (value ushr 16).toByte(), (value ushr 8).toByte(), value.toByte()
         )
     }
 
     @Throws(IOException::class)
-    fun readDouble(input: InputStream): Double {
-        val bits = ((input.read() and 0xff).toLong() shl 56
-                or ((input.read() and 0xff).toLong() shl 48)
-                or ((input.read()
-                and 0xff).toLong() shl 40)
-                or ((input.read() and 0xff).toLong() shl 32)
-                or (input.read() and 0xff shl 24).toLong()
-                or (input.read() and 0xff shl 16).toLong()
-                or (input.read() and 0xff shl 8).toLong()
-                or (input.read() and 0xff).toLong())
+    fun readDouble(input: ByteArray): Double {
+        val bits =
+            ((input[0].toInt() and 0xff).toLong() shl 56 or ((input[1].toInt() and 0xff).toLong() shl 48) or ((input[2].toInt() and 0xff).toLong() shl 40) or ((input[3].toInt() and 0xff).toLong() shl 32) or (input[4].toInt() and 0xff shl 24).toLong() or (input[5].toInt() and 0xff shl 16).toLong() or (input[6].toInt() and 0xff shl 8).toLong() or (input[7].toInt() and 0xff).toLong())
         return java.lang.Double.longBitsToDouble(bits)
     }
 
     @Throws(IOException::class)
     fun writeDouble(out: OutputStream, d: Double) {
         val l = java.lang.Double.doubleToRawLongBits(d)
-        out.write(byteArrayOf(
-                (l shr 56 and 0xff).toByte(), (l shr 48 and 0xff).toByte(), (l shr 40 and 0xff).toByte(),
-                (l shr 32 and 0xff).toByte(), (l shr 24 and 0xff).toByte(), (l shr 16 and 0xff).toByte(),
-                (l shr 8 and 0xff).toByte(), (l and 0xff).toByte()
-        ))
+        out.write(
+            byteArrayOf(
+                (l shr 56 and 0xff).toByte(),
+                (l shr 48 and 0xff).toByte(),
+                (l shr 40 and 0xff).toByte(),
+                (l shr 32 and 0xff).toByte(),
+                (l shr 24 and 0xff).toByte(),
+                (l shr 16 and 0xff).toByte(),
+                (l shr 8 and 0xff).toByte(),
+                (l and 0xff).toByte()
+            )
+        )
     }
 
     fun getSalt(description: String): String? {

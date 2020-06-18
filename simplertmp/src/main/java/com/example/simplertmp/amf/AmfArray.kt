@@ -28,13 +28,13 @@ class AmfArray : AmfData {
     }
 
     @Throws(IOException::class)
-    override fun readFrom(input: InputStream) {
-        // Skip data type byte (we assume it's already read)
+    override fun readFrom(input: ByteArray) {
         val length: Int = Util.readUnsignedInt32(input)
-        size = 5 // 1 + 4
-        items = ArrayList<AmfData>()
+        size = 4
+
+        items = ArrayList()
         for (i in 0 until length) {
-            val dataItem: AmfData = AmfDecoder.readFrom(input)
+            val dataItem: AmfData = AmfDecoder.readFrom(input.drop(size).toByteArray())
             size += dataItem.size
             (items as ArrayList<AmfData>).add(dataItem)
         }

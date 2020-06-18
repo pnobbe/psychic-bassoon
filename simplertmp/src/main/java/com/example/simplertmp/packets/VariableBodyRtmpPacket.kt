@@ -37,13 +37,13 @@ abstract class VariableBodyRtmpPacket(header: RtmpHeader) : RtmpPacket(header) {
     }
 
     @Throws(IOException::class)
-    protected fun readVariableData(input: InputStream, bytesAlreadyRead: Int) {
+    protected fun readVariableData(input: ByteArray, bytesAlreadyRead: Int) {
         // ...now read in arguments (if any)
         var i = bytesAlreadyRead
         while (i < header.packetLength) {
-            val dataItem: AmfData = AmfDecoder.readFrom(input)
+            val dataItem: AmfData = AmfDecoder.readFrom(input.drop(i).toByteArray())
             addData(dataItem)
-            i += dataItem.size
+            i += dataItem.size + 1
         }
     }
 

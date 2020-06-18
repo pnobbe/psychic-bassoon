@@ -14,9 +14,7 @@ class AmfNull : AmfData {
         output.write(AmfType.NULL.value.toInt())
     }
 
-    override fun readFrom(input: InputStream) {
-        // Skip data type byte (we assume it's already read)
-    }
+    override fun readFrom(input: ByteArray) {}
 
     override val size: Int
         get() = 1

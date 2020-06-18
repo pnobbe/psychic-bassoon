@@ -13,8 +13,8 @@ import java.util.logging.Logger
 class RtmpDecoder(private val rtmpSessionInfo: RtmpSessionInfo) {
     @Throws(IOException::class)
     fun readPacket(input: InputStream): RtmpPacket? {
-        var inp: InputStream? = input
-        val header = RtmpHeader.readHeader(inp!!, rtmpSessionInfo)
+        var inp: InputStream = input
+        val header = RtmpHeader.readHeader(inp, rtmpSessionInfo)
         // Log.d(TAG, "readPacket(): header.messageType: " + header.getMessageType());
         val chunkStreamInfo = rtmpSessionInfo.getChunkStreamInfo(header.chunkStreamId)
         chunkStreamInfo.setPrevHeaderRx(header)
@@ -29,15 +29,11 @@ class RtmpDecoder(private val rtmpSessionInfo: RtmpSessionInfo) {
                 chunkStreamInfo.storedPacketInputStream
             }
         }
+
+        val body = ByteArray(header.packetLength).apply { inp.read(this, 0, header.packetLength) }
         val rtmpPacket: RtmpPacket
         when (header.messageType) {
-            RtmpHeader.MessageType.SET_CHUNK_SIZE -> {
-                val setChunkSize = SetChunkSize(header)
-                setChunkSize.readBody(inp)
-                Logger.getLogger(TAG).log(Level.INFO, "readPacket(): Setting chunk size to: ${setChunkSize.chunkSize}")
-                rtmpSessionInfo.rxChunkSize = setChunkSize.chunkSize
-                return null
-            }
+            RtmpHeader.MessageType.SET_CHUNK_SIZE -> rtmpPacket = SetChunkSize(header)
             RtmpHeader.MessageType.ABORT -> rtmpPacket = Abort(header)
             RtmpHeader.MessageType.USER_CONTROL_MESSAGE -> rtmpPacket = UserControl(header)
             RtmpHeader.MessageType.WINDOW_ACKNOWLEDGEMENT_SIZE -> rtmpPacket = WindowAckSize(header)
@@ -47,10 +43,14 @@ class RtmpDecoder(private val rtmpSessionInfo: RtmpSessionInfo) {
             RtmpHeader.MessageType.COMMAND_AMF0 -> rtmpPacket = Command(header)
             RtmpHeader.MessageType.DATA_AMF0 -> rtmpPacket = Data(header)
             RtmpHeader.MessageType.ACKNOWLEDGEMENT -> rtmpPacket = Acknowledgement(header)
-            else -> throw IOException(
-                    "No packet body implementation for message type: " + header.messageType)
+            RtmpHeader.MessageType.DATA_AMF3 -> TODO()
+            RtmpHeader.MessageType.SHARED_OBJECT_AMF3 -> TODO()
+            RtmpHeader.MessageType.COMMAND_AMF3 -> TODO()
+            RtmpHeader.MessageType.SHARED_OBJECT_AMF0 -> TODO()
+            RtmpHeader.MessageType.AGGREGATE_MESSAGE -> TODO()
+            null -> TODO()
         }
-        rtmpPacket.readBody(inp)
+        rtmpPacket.readBody(body)
         return rtmpPacket
     }
 

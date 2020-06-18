@@ -19,7 +19,7 @@ class AmfNumber : AmfData {
         this.value = value
     }
 
-    constructor() {}
+    constructor()
 
     @Throws(IOException::class)
     override fun writeTo(output: OutputStream) {
@@ -28,8 +28,7 @@ class AmfNumber : AmfData {
     }
 
     @Throws(IOException::class)
-    override fun readFrom(input: InputStream) {
-        // Skip data type byte (we assume it's already read)
+    override fun readFrom(input: ByteArray) {
         value = Util.readDouble(input)
     }
 
@@ -38,10 +37,9 @@ class AmfNumber : AmfData {
         const val size = 9
 
         @Throws(IOException::class)
-        fun readNumberFrom(input: InputStream): Double {
+        fun readNumberFrom(input: ByteArray): Double {
             // Skip data type byte
-            input.read()
-            return Util.readDouble(input)
+            return Util.readDouble(input.drop(1).toByteArray())
         }
 
         @Throws(IOException::class)

@@ -28,7 +28,7 @@ class WindowAckSize : RtmpPacket {
     }
 
     @Throws(IOException::class)
-    override fun readBody(input: InputStream) {
+    override fun readBody(input: ByteArray) {
         acknowledgementWindowSize = Util.readUnsignedInt32(input)
     }
 

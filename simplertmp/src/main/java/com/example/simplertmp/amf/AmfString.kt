@@ -2,7 +2,6 @@ package com.example.simplertmp.amf
 
 import com.example.simplertmp.Util
 import java.io.IOException
-import java.io.InputStream
 import java.io.OutputStream
 import java.io.UnsupportedEncodingException
 import java.nio.charset.Charset
@@ -35,7 +34,7 @@ class AmfString : AmfData {
         this.isKey = isKey
     }
 
-    constructor() {}
+    constructor()
 
     constructor(isKey: Boolean) {
         this.isKey = isKey
@@ -44,7 +43,7 @@ class AmfString : AmfData {
     @Throws(IOException::class)
     override fun writeTo(output: OutputStream) {
         // Strings are ASCII encoded
-        val byteValue = value!!.toByteArray(charset("ASCII"))
+        val byteValue = value.toByteArray(charset("ASCII"))
         // Write the STRING data type definition (except if this String is used as a key)
         if (!isKey) {
             output.write(AmfType.STRING.value.toInt())
@@ -56,30 +55,33 @@ class AmfString : AmfData {
     }
 
     @Throws(IOException::class)
-    override fun readFrom(input: InputStream) {
-        // Skip data type byte (we assume it's already read)
+    override fun readFrom(input: ByteArray) {
         val length: Int = Util.readUnsignedInt16(input)
         size = 3 + length // 1 + 2 + length
+
         // Read string value
-        val byteValue = ByteArray(length)
-        Util.readBytesUntilFull(input, byteValue)
-        value = String(byteValue, Charset.forName("ASCII"))
+        value = String(input
+                .drop(2)
+                .take(length)
+                .toByteArray(),
+                Charset.forName("ASCII")
+        )
     }
 
     companion object {
         private const val TAG = "AmfString"
 
         @Throws(IOException::class)
-        fun readStringFrom(input: InputStream, isKey: Boolean): String {
-            if (!isKey) {
-                // Read past the data type byte
-                input.read()
-            }
-            val length: Int = Util.readUnsignedInt16(input)
+        fun readStringFrom(input: ByteArray, isKey: Boolean): String {
+            var index = if (!isKey) 1 else 0
+            val length: Int = Util.readUnsignedInt16(input.drop(index).toByteArray())
+            index += 2
             // Read string value
-            val byteValue = ByteArray(length)
-            Util.readBytesUntilFull(input, byteValue)
-            return String(byteValue, Charset.forName("ASCII"))
+            return String(input
+                    .drop(index)
+                    .dropLast(input.size - (index + length))
+                    .toByteArray(),
+                    Charset.forName("ASCII"))
         }
 
         @Throws(IOException::class)
@@ -100,7 +102,7 @@ class AmfString : AmfData {
          */
         fun sizeOf(string: String, isKey: Boolean): Int {
             return try {
-                (if (isKey) 0 else 1) + 2 + string.toByteArray(charset("ASCII")).size
+                (if (!isKey) 1 else 0) + 2 + string.toByteArray(charset("ASCII")).size
             } catch (ex: UnsupportedEncodingException) {
                 Logger.getLogger(TAG).log(Level.SEVERE, ex.message)
                 throw RuntimeException(ex)

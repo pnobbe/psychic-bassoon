@@ -180,7 +180,7 @@ class UserControl : RtmpPacket {
     }
 
     @Throws(IOException::class)
-    override fun readBody(input: InputStream) {
+    override fun readBody(input: ByteArray) {
         // Bytes 0-1: first parameter: ping type (mandatory)
         type = Type.values().first { it.intValue == Util.readUnsignedInt16(input) }
         var bytesRead = 2
@@ -192,7 +192,7 @@ class UserControl : RtmpPacket {
             setEventData(Util.readUnsignedInt32(input))
             4
         }
-        assert(header.packetLength == bytesRead)
+        require(header.packetLength == bytesRead) { "Faulty packet read, expected ${header.packetLength} bytes but read $bytesRead bytes" }
     }
 
     @Throws(IOException::class)

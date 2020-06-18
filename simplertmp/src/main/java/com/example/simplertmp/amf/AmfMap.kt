@@ -33,11 +33,10 @@ class AmfMap : AmfObject() {
     }
 
     @Throws(IOException::class)
-    override fun readFrom(input: InputStream) {
-        // Skip data type byte (we assume it's already read)
+    override fun readFrom(input: ByteArray) {
         val length: Int = Util.readUnsignedInt32(input) // Seems this is always 0
-        super.readFrom(input)
         size += 4 // Add the bytes read for parsing the array size (length)
+        super.readFrom(input)
     }
 
     // array length bytes

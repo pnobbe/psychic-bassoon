@@ -26,7 +26,7 @@ interface AmfData {
      * @return the amount of bytes read
      */
     @Throws(IOException::class)
-    fun readFrom(input: InputStream)
+    fun readFrom(input: ByteArray)
 
     /** @return the amount of bytes required for this object
      */
