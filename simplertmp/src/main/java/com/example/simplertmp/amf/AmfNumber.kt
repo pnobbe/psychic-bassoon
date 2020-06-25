@@ -13,7 +13,7 @@ import java.io.OutputStream
  */
 class AmfNumber : AmfData {
     var value = 0.0
-    override val size = 9
+    override var size = 9
 
     constructor(value: Double) {
         this.value = value
@@ -33,13 +33,12 @@ class AmfNumber : AmfData {
     }
 
     companion object {
-        /** Size of an AMF number, in bytes (including type bit)  */
+        /** Size of an AMF number, in bytes, with the key byte */
         const val size = 9
 
         @Throws(IOException::class)
         fun readNumberFrom(input: ByteArray): Double {
-            // Skip data type byte
-            return Util.readDouble(input.drop(1).toByteArray())
+            return Util.readDouble(input)
         }
 
         @Throws(IOException::class)

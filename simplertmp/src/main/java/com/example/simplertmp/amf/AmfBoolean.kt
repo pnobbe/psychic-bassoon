@@ -21,7 +21,7 @@ class AmfBoolean(private var isValue: Boolean = false) : AmfData {
         isValue = input[0].toInt() == 0x01
     }
 
-    override val size: Int
-        get() = 2
+    // Key byte + bool byte
+    override var size: Int = 2
 
 }

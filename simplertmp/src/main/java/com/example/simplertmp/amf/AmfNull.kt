@@ -16,8 +16,7 @@ class AmfNull : AmfData {
 
     override fun readFrom(input: ByteArray) {}
 
-    override val size: Int
-        get() = 1
+    override var size: Int = 1
 
     companion object {
         @Throws(IOException::class)

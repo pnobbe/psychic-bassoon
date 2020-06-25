@@ -35,17 +35,13 @@ class AmfMap : AmfObject() {
     @Throws(IOException::class)
     override fun readFrom(input: ByteArray) {
         val length: Int = Util.readUnsignedInt32(input) // Seems this is always 0
-        size += 4 // Add the bytes read for parsing the array size (length)
         super.readFrom(input)
     }
 
     // array length bytes
-    override var size: Int = -1
+    override var size: Int = 5
         get() {
-            if (field == -1) {
-                field = super.size
-                field += 4 // array length bytes
-            }
+            field += super.size
             return field
         }
         set(size) {

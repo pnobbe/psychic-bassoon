@@ -43,7 +43,7 @@ abstract class VariableBodyRtmpPacket(header: RtmpHeader) : RtmpPacket(header) {
         while (i < header.packetLength) {
             val dataItem: AmfData = AmfDecoder.readFrom(input.drop(i).toByteArray())
             addData(dataItem)
-            i += dataItem.size + 1
+            i += dataItem.size
         }
     }
 

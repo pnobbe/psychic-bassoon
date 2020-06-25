@@ -20,7 +20,6 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
-import android.content.res.AssetFileDescriptor
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
@@ -43,24 +42,22 @@ import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavController
 import androidx.navigation.Navigation
 import androidx.navigation.fragment.navArgs
+import com.arthenica.mobileffmpeg.Config
+import com.arthenica.mobileffmpeg.FFmpeg
 import com.example.android.camera.utils.AutoFitSurfaceView
 import com.example.android.camera.utils.OrientationLiveData
 import com.example.android.camera.utils.getPreviewOutputSize
 import com.example.android.camera2.video.BuildConfig
 import com.example.android.camera2.video.CameraActivity
 import com.example.android.camera2.video.R
-import com.example.simplertmp.DefaultRtmpPublisher
-import com.example.simplertmp.RtmpPublisher
 import com.example.simplertmp.io.ConnectCheckerRtmp
 import kotlinx.android.synthetic.main.fragment_camera.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
-import java.io.ByteArrayOutputStream
 import java.io.File
-import java.net.URL
-import java.nio.ByteBuffer
+import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.coroutines.resume
@@ -102,7 +99,7 @@ class CameraFragment : Fragment(), ConnectCheckerRtmp {
 
         // Prepare and release a dummy MediaRecorder with our new surface
         // Required to allocate an appropriately sized buffer before passing the Surface as the
-        //  output target to the capture session
+        // output target to the capture session
         createRecorder(surface).apply {
             prepare()
             release()
@@ -110,6 +107,17 @@ class CameraFragment : Fragment(), ConnectCheckerRtmp {
 
         surface
     }
+
+    private val format: MediaFormat by lazy {
+        MediaFormat.createVideoFormat("video/avc", 320, 240).apply {
+            setInteger(MediaFormat.KEY_BIT_RATE, 3000)
+            setInteger(MediaFormat.KEY_FRAME_RATE, 30)
+            setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible)
+            setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 2)
+        }
+    }
+
+    private val codec: MediaCodec = MediaCodec.createEncoderByType("video/avc")
 
     /** Saves the video recording */
     private val recorder: MediaRecorder by lazy { createRecorder(recorderSurface) }
@@ -134,6 +142,8 @@ class CameraFragment : Fragment(), ConnectCheckerRtmp {
             }, CameraActivity.ANIMATION_FAST_MILLIS)
         }
     }
+
+    private var mBuffer = ByteArray(0)
 
     /** Where the camera preview is displayed */
     private lateinit var viewFinder: AutoFitSurfaceView
@@ -166,6 +176,7 @@ class CameraFragment : Fragment(), ConnectCheckerRtmp {
             // Sets user requested FPS for all targets
             set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(args.fps, args.fps))
         }.build()
+
     }
 
     private var recordingStartMillis: Long = 0L
@@ -178,83 +189,143 @@ class CameraFragment : Fragment(), ConnectCheckerRtmp {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         lifecycleScope.launch(Dispatchers.IO) {
+//            val publisher: RtmpPublisher = DefaultRtmpPublisher(this@CameraFragment)
+//            if (publisher.connect("rtmp://10.0.2.2:1935/live/app")) {
+//                if (publisher.publish("live")) {
+//                    println("Time to send frames")
+//                    val srcFd: AssetFileDescriptor = resources.openRawResourceFd(R.raw.video)
+//
+//                    var curFlag = 0
+//                    codec.setCallback(object : MediaCodec.Callback() {
+//                        override fun onOutputBufferAvailable(codec: MediaCodec, index: Int, info: MediaCodec.BufferInfo) {
+//                            lifecycleScope.launch(Dispatchers.IO) {
+//                                val outputBuffer: ByteBuffer = codec.getOutputBuffer(index)!!
+//                                val bufferFormat = codec.getOutputFormat(index)
+//
+//                                if (info.flags != 0) {
+//                                    curFlag = info.flags
+//                                }
+//
+//                                outputBuffer.position(info.offset)
+//                                outputBuffer.limit(info.offset + info.size)
+//
+//                                if (mBuffer.size < info.size) {
+//                                    mBuffer = ByteArray(info.size)
+//                                }
+//
+//                                outputBuffer.get(mBuffer, 0, info.size)
+//
+//                                when (curFlag) {
+//                                    MediaCodec.BUFFER_FLAG_CODEC_CONFIG -> {
+//                                        publisher.publishVideoData(
+//                                                mBuffer, info.size, (info.presentationTimeUs / 1000).toInt()
+//                                        )
+//                                    }
+//                                    MediaCodec.BUFFER_FLAG_END_OF_STREAM -> {
+//                                    }
+//                                    MediaCodec.BUFFER_FLAG_KEY_FRAME -> {
+//                                        publisher.publishVideoData(
+//                                                mBuffer, info.size, (info.presentationTimeUs / 1000).toInt()
+//                                        )
+//                                    }
+//                                    MediaCodec.BUFFER_FLAG_PARTIAL_FRAME -> {
+//                                        publisher.publishVideoData(
+//                                                mBuffer, info.size, (info.presentationTimeUs / 1000).toInt()
+//                                        )
+//                                    }
+//                                }
+//
+//                                codec.releaseOutputBuffer(index, false)
+//                            }
+//                        }
+//
+//                        override fun onInputBufferAvailable(codec: MediaCodec, index: Int) {
+//                            return
+//                        }
+//
+//                        override fun onOutputFormatChanged(codec: MediaCodec, format: MediaFormat) {
+//                            return
+//                        }
+//
+//                        override fun onError(codec: MediaCodec, e: MediaCodec.CodecException) {
+//                            return
+//                        }
+//
+//                    })
 
-            val publisher: RtmpPublisher = DefaultRtmpPublisher(this@CameraFragment)
-            if (publisher.connect("rtmp://10.0.2.2:1935/live/app")) {
-                if (publisher.publish("live")) {
-                    println("Time to send frames")
-                    val srcFd: AssetFileDescriptor = resources.openRawResourceFd(R.raw.video)
 
-                    val extractor = MediaExtractor()
-                    extractor.setDataSource(srcFd.fileDescriptor, srcFd.startOffset, srcFd.length)
-
-                    for (i in 0 until extractor.trackCount) {
-                        val format = extractor.getTrackFormat(i)
-                        val mime = format.getString(MediaFormat.KEY_MIME)
-                        if (mime == MediaFormat.MIMETYPE_VIDEO_AVC || mime == MediaFormat.MIMETYPE_AUDIO_AAC) {
-                            extractor.selectTrack(i)
-                        }
-                    }
-
-                    val buf = ByteBuffer.allocate(2 * 1024 * 1024)
-                    val bufInfo = MediaCodec.BufferInfo()
-                    var framecount = 0
-                    var offset = 0
-                    var keyframeCount = 0
-                    try {
-                        while (extractor.readSampleData(buf, offset) > 0) {
-                            val trackIndex = extractor.sampleTrackIndex
-                            val presentationTimeUs = extractor.sampleTime
-                            bufInfo.offset = offset
-                            bufInfo.size = extractor.sampleSize.toInt()
-                            bufInfo.flags = extractor.sampleFlags
-
-
-                            if (bufInfo.size < 0) {
-                                Log.d(TAG, "Input EOS")
-                                bufInfo.size = 0
-                            } else {
-                                val keyframe = extractor.sampleFlags == MediaExtractor.SAMPLE_FLAG_SYNC
-                                bufInfo.presentationTimeUs = extractor.sampleTime
-                                // Send data
-                                when (extractor.getTrackFormat(extractor.sampleTrackIndex)
-                                    .getString(MediaFormat.KEY_MIME)) {
-                                    MediaFormat.MIMETYPE_AUDIO_AAC -> {
-                                        // Frame is audio
+//                    val extractor = MediaExtractor()
+//                    extractor.setDataSource(srcFd.fileDescriptor, srcFd.startOffset, srcFd.length)
+//
+//                    for (i in 0 until extractor.trackCount) {
+//                        val format = extractor.getTrackFormat(i)
+//                        val mime = format.getString(MediaFormat.KEY_MIME)
+//                        if (mime == MediaFormat.MIMETYPE_VIDEO_AVC || mime == MediaFormat.MIMETYPE_AUDIO_AAC) {
+//                            extractor.selectTrack(i)
+//                        }
+//                    }
+//
+//                    val buf = ByteBuffer.allocate(2 * 1024 * 1024)
+//                    val bufInfo = MediaCodec.BufferInfo()
+//                    var framecount = 0
+//                    var offset = 0
+//                    var keyframeCount = 0
+//                    try {
+//                        while (extractor.readSampleData(buf, offset) > 0) {
+//                            val trackIndex = extractor.sampleTrackIndex
+//                            val presentationTimeUs = extractor.sampleTime
+//                            bufInfo.offset = offset
+//                            bufInfo.size = extractor.sampleSize.toInt()
+//                            bufInfo.flags = extractor.sampleFlags
+//
+//
+//                            if (bufInfo.size < 0) {
+//                                Log.d(TAG, "Input EOS")
+//                                bufInfo.size = 0
+//                            } else {
+//                                val keyframe = extractor.sampleFlags == MediaExtractor.SAMPLE_FLAG_SYNC
+//                                bufInfo.presentationTimeUs = extractor.sampleTime
+//                                // Send data
+//                                when (extractor.getTrackFormat(extractor.sampleTrackIndex)
+//                                        .getString(MediaFormat.KEY_MIME)) {
+//                                    MediaFormat.MIMETYPE_AUDIO_AAC -> {
+//                                        // Frame is audio
+////                                        Log.d(
+////                                                TAG,
+////                                                "AUDIO Frame: $framecount, PresentatiomTime: ${bufInfo.presentationTimeUs}, Keyframe: ${bufInfo.flags}, TrackIndex: $trackIndex, Size(bytes): ${bufInfo.size}"
+////                                        )
+//                                        publisher.publishAudioData(
+//                                                buf.array(), bufInfo.size, (bufInfo.presentationTimeUs / 1000).toInt()
+//                                        )
+//                                    }
+//                                    MediaFormat.MIMETYPE_VIDEO_AVC -> {
+//                                        // Frame is video
+//                                        if (bufInfo.flags == 1) {
+//                                            keyframeCount++
+//                                        }
 //                                        Log.d(
 //                                                TAG,
-//                                                "AUDIO Frame: $framecount, PresentatiomTime: ${bufInfo.presentationTimeUs}, Keyframe: ${bufInfo.flags}, TrackIndex: $trackIndex, Size(bytes): ${bufInfo.size}"
+//                                                "VIDEO Frame: $framecount, PresentatiomTime: ${bufInfo.presentationTimeUs}, Keyframe: ${bufInfo.flags}, TrackIndex: $trackIndex, Size(bytes): ${bufInfo.size}, Total keyframes: $keyframeCount"
 //                                        )
-                                        publisher.publishAudioData(
-                                            buf.array(), bufInfo.size, (bufInfo.presentationTimeUs / 1000).toInt()
-                                        )
-                                    }
-                                    MediaFormat.MIMETYPE_VIDEO_AVC -> {
-                                        // Frame is video
-                                        if (bufInfo.flags == 1) { keyframeCount++ }
-                                        Log.d(
-                                                TAG,
-                                                "VIDEO Frame: $framecount, PresentatiomTime: ${bufInfo.presentationTimeUs}, Keyframe: ${bufInfo.flags}, TrackIndex: $trackIndex, Size(bytes): ${bufInfo.size}, Total keyframes: $keyframeCount"
-                                        )
-                                        publisher.publishVideoData(
-                                            buf.array(), bufInfo.size, (bufInfo.presentationTimeUs / 1000).toInt()
-                                        )
-
-                                        Thread.sleep(42)
-                                    }
-                                    else                           -> {
-                                        Log.d(TAG, "Unknown frame type)")
-                                    }
-                                }
-                                extractor.advance()
-                                framecount++
-                            }
-                        }
-                    } catch (e: Exception) {
-                        throw e
-                    }
-
-                    srcFd.close()
+//                                        publisher.publishVideoData(
+//                                                buf.array(), bufInfo.size, (bufInfo.presentationTimeUs / 1000).toInt()
+//                                        )
+//
+//                                        Thread.sleep(42)
+//                                    }
+//                                    else -> {
+//                                        Log.d(TAG, "Unknown frame type)")
+//                                    }
+//                                }
+//                                extractor.advance()
+//                                framecount++
+//                            }
+//                        }
+//                    } catch (e: Exception) {
+//                        throw e
+//                    }
+//
+//                    srcFd.close()
 //                    val bmp = BitmapFactory.decodeResource(resources, R.raw.image)
 //                    val output = ByteArrayOutputStream()
 //                    bmp.compress(Bitmap.CompressFormat.JPEG, 0, output)
@@ -268,8 +339,8 @@ class CameraFragment : Fragment(), ConnectCheckerRtmp {
 //                        dts++
 //                        Thread.sleep(17)
 //                    }
-                }
-            }
+//                }
+//            }
         }
     }
 
@@ -340,12 +411,12 @@ class CameraFragment : Fragment(), ConnectCheckerRtmp {
         // Creates list of Surfaces where the camera will output frames
         val targets = listOf(viewFinder.holder.surface, recorderSurface)
 
-        // Start a capture session using our open camera and list of Surfaces where frames will go
-        session = createCaptureSession(camera, targets, cameraHandler)
-
-        // Sends the capture request as frequently as possible until the session is torn down or
-        //  session.stopRepeating() is called
-        session.setRepeatingRequest(previewRequest, null, cameraHandler)
+//        // Start a capture session using our open camera and list of Surfaces where frames will go
+//        session = createCaptureSession(camera, targets, cameraHandler)
+//
+//        // Sends the capture request as frequently as possible until the session is torn down or
+//        //  session.stopRepeating() is called
+//        session.setRepeatingRequest(previewRequest, null, cameraHandler)
 
         // React to user touching the capture button
         capture_button.setOnClickListener { view ->
@@ -354,24 +425,24 @@ class CameraFragment : Fragment(), ConnectCheckerRtmp {
                     recording = true
                     // Prevents screen rotation during the video recording
                     requireActivity().requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LOCKED
+//
+//                    codec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+//                    codec.setInputSurface(recorderSurface)
 
-                    // Start recording repeating requests, which will stop the ongoing preview
-                    //  repeating requests without having to explicitly call `session.stopRepeating`
-                    session.setRepeatingRequest(recordRequest, null, cameraHandler)
+//                    // Finalizes recorder setup and starts recording
+//                    recorder.apply {
+//                        // Sets output orientation based on current sensor value at start time
+//                        relativeOrientation.value?.let { setOrientationHint(it) }
+//                        prepare()
+//                        start()
+//                    }
 
-                    // Finalizes recorder setup and starts recording
-                    recorder.apply {
-                        // Sets output orientation based on current sensor value at start time
-                        relativeOrientation.value?.let { setOrientationHint(it) }
-                        prepare()
-                        start()
-                    }
 
                     recordingStartMillis = System.currentTimeMillis()
                     Log.d(TAG, "Recording started")
 
                     // Starts recording animation
-                    overlay.post(animationTask)
+//                    overlay.post(animationTask)
                 }
             } else {
                 lifecycleScope.launch(Dispatchers.IO) {
@@ -385,11 +456,16 @@ class CameraFragment : Fragment(), ConnectCheckerRtmp {
                         delay(MIN_REQUIRED_RECORDING_TIME_MILLIS - elapsedTimeMillis)
                     }
 
+                    FFmpeg.cancel()
+
                     Log.d(TAG, "Recording stopped. Output file: $outputFile")
-                    recorder.stop()
+//                    codec.stop()
+//                    recorder.stop()
+//                    codec.release()
+//                    recorder.release()
 
                     // Removes recording animation
-                    overlay.removeCallbacks(animationTask)
+//                    overlay.removeCallbacks(animationTask)
 
                     // Broadcasts the media file to the rest of the system
                     MediaScannerConnection.scanFile(

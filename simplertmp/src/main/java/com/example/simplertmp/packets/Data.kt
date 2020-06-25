@@ -34,7 +34,7 @@ class Data : VariableBodyRtmpPacket {
     @Throws(IOException::class)
     override fun readBody(input: ByteArray) {
         // Read notification type
-        type = AmfString.readStringFrom(input, false)
+        type = AmfString.readStringFrom(input.drop(1).toByteArray())
         val bytesRead = AmfString.sizeOf(type, false)
         // Read data body
         readVariableData(input, bytesRead)

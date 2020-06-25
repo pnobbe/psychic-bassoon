@@ -24,6 +24,6 @@ object AmfDecoder {
             else -> throw IOException("Unknown/unimplemented AMF data type: $amfType")
         }
         amfData.readFrom(input.drop(1).toByteArray()) // Remove type byte, we don't need our data to parse it
-        return amfData
+        return amfData // Add the data type byte to the sum the actual data size
     }
 }

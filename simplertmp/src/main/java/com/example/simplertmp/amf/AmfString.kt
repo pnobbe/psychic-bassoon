@@ -14,12 +14,13 @@ import java.util.logging.Logger
  */
 class AmfString : AmfData {
     lateinit var value: String
-    var isKey = false
-    override var size = -1
+    private var isKey: Boolean = false
+    override var size = 0
         get() {
-            if (field == -1) {
+            if (this::value.isInitialized) {
                 field = try {
-                    (if (isKey) 0 else 1) + 2 + (value.toByteArray(charset("ASCII")).size)
+                    // Key bytes + 2 length bytes + size
+                    3 + value.toByteArray(charset("ASCII")).size
                 } catch (ex: UnsupportedEncodingException) {
                     Logger.getLogger(TAG).log(Level.SEVERE, ex.message)
                     throw RuntimeException(ex)
@@ -28,7 +29,6 @@ class AmfString : AmfData {
             return field
         }
 
-    @JvmOverloads
     constructor(value: String, isKey: Boolean = false) {
         this.value = value
         this.isKey = isKey
@@ -36,11 +36,6 @@ class AmfString : AmfData {
 
     constructor()
 
-    constructor(isKey: Boolean) {
-        this.isKey = isKey
-    }
-
-    @Throws(IOException::class)
     override fun writeTo(output: OutputStream) {
         // Strings are ASCII encoded
         val byteValue = value.toByteArray(charset("ASCII"))
@@ -54,10 +49,8 @@ class AmfString : AmfData {
         output.write(byteValue)
     }
 
-    @Throws(IOException::class)
     override fun readFrom(input: ByteArray) {
         val length: Int = Util.readUnsignedInt16(input)
-        size = 3 + length // 1 + 2 + length
 
         // Read string value
         value = String(input
@@ -72,14 +65,12 @@ class AmfString : AmfData {
         private const val TAG = "AmfString"
 
         @Throws(IOException::class)
-        fun readStringFrom(input: ByteArray, isKey: Boolean): String {
-            var index = if (!isKey) 1 else 0
-            val length: Int = Util.readUnsignedInt16(input.drop(index).toByteArray())
-            index += 2
+        fun readStringFrom(input: ByteArray): String {
+            val length: Int = Util.readUnsignedInt16(input)
             // Read string value
             return String(input
-                    .drop(index)
-                    .dropLast(input.size - (index + length))
+                    .drop(2)
+                    .dropLast(input.size - (2 + length))
                     .toByteArray(),
                     Charset.forName("ASCII"))
         }
@@ -102,7 +93,7 @@ class AmfString : AmfData {
          */
         fun sizeOf(string: String, isKey: Boolean): Int {
             return try {
-                (if (!isKey) 1 else 0) + 2 + string.toByteArray(charset("ASCII")).size
+                (if (isKey) 0 else 1) + 2 + string.toByteArray(charset("ASCII")).size
             } catch (ex: UnsupportedEncodingException) {
                 Logger.getLogger(TAG).log(Level.SEVERE, ex.message)
                 throw RuntimeException(ex)

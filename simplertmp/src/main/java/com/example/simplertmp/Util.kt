@@ -128,36 +128,6 @@ object Util {
     fun toByteArray(d: Double): ByteArray {
         val l = java.lang.Double.doubleToRawLongBits(d)
         return byteArrayOf(
-            (l shr 56 and 0xff).toByte(),
-            (l shr 48 and 0xff).toByte(),
-            (l shr 40 and 0xff).toByte(),
-            (l shr 32 and 0xff).toByte(),
-            (l shr 24 and 0xff).toByte(),
-            (l shr 16 and 0xff).toByte(),
-            (l shr 8 and 0xff).toByte(),
-            (l and 0xff).toByte()
-        )
-    }
-
-    @Throws(IOException::class)
-    fun unsignedInt32ToByteArray(value: Int): ByteArray {
-        return byteArrayOf(
-            (value ushr 24).toByte(), (value ushr 16).toByte(), (value ushr 8).toByte(), value.toByte()
-        )
-    }
-
-    @Throws(IOException::class)
-    fun readDouble(input: ByteArray): Double {
-        val bits =
-            ((input[0].toInt() and 0xff).toLong() shl 56 or ((input[1].toInt() and 0xff).toLong() shl 48) or ((input[2].toInt() and 0xff).toLong() shl 40) or ((input[3].toInt() and 0xff).toLong() shl 32) or (input[4].toInt() and 0xff shl 24).toLong() or (input[5].toInt() and 0xff shl 16).toLong() or (input[6].toInt() and 0xff shl 8).toLong() or (input[7].toInt() and 0xff).toLong())
-        return java.lang.Double.longBitsToDouble(bits)
-    }
-
-    @Throws(IOException::class)
-    fun writeDouble(out: OutputStream, d: Double) {
-        val l = java.lang.Double.doubleToRawLongBits(d)
-        out.write(
-            byteArrayOf(
                 (l shr 56 and 0xff).toByte(),
                 (l shr 48 and 0xff).toByte(),
                 (l shr 40 and 0xff).toByte(),
@@ -166,7 +136,44 @@ object Util {
                 (l shr 16 and 0xff).toByte(),
                 (l shr 8 and 0xff).toByte(),
                 (l and 0xff).toByte()
-            )
+        )
+    }
+
+    @Throws(IOException::class)
+    fun unsignedInt32ToByteArray(value: Int): ByteArray {
+        return byteArrayOf(
+                (value ushr 24).toByte(), (value ushr 16).toByte(), (value ushr 8).toByte(), value.toByte()
+        )
+    }
+
+    @Throws(IOException::class)
+    fun readDouble(input: ByteArray): Double {
+        val bits =
+                ((input[0].toInt() and 0xff).toLong() shl 56 or
+                        ((input[1].toInt() and 0xff).toLong() shl 48) or
+                        ((input[2].toInt() and 0xff).toLong() shl 40) or
+                        ((input[3].toInt() and 0xff).toLong() shl 32) or
+                        (input[4].toInt() and 0xff shl 24).toLong() or
+                        (input[5].toInt() and 0xff shl 16).toLong() or
+                        (input[6].toInt() and 0xff shl 8).toLong() or
+                        (input[7].toInt() and 0xff).toLong())
+        return java.lang.Double.longBitsToDouble(bits)
+    }
+
+    @Throws(IOException::class)
+    fun writeDouble(out: OutputStream, d: Double) {
+        val l = java.lang.Double.doubleToRawLongBits(d)
+        out.write(
+                byteArrayOf(
+                        (l shr 56 and 0xff).toByte(),
+                        (l shr 48 and 0xff).toByte(),
+                        (l shr 40 and 0xff).toByte(),
+                        (l shr 32 and 0xff).toByte(),
+                        (l shr 24 and 0xff).toByte(),
+                        (l shr 16 and 0xff).toByte(),
+                        (l shr 8 and 0xff).toByte(),
+                        (l and 0xff).toByte()
+                )
         )
     }
 

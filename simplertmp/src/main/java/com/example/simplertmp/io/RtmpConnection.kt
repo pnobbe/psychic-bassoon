@@ -157,7 +157,7 @@ class RtmpConnection(private val connectCheckerRtmp: ConnectCheckerRtmp) : RtmpP
                 rtmpSessionInfo!!.getChunkStreamInfo(ChunkStreamInfo.RTMP_CID_OVER_STREAM.toInt())
         val invoke = Command("connect", ++transactionIdCounter, chunkStreamInfo)
 
-        if (transactionIdCounter != 1) throw UnexpectedException("TransactionID should be 1")
+        require(transactionIdCounter == 1) { "TransactionID should be 1" }
 
         invoke.header.messageStreamId = 0
         val args = AmfObject()

@@ -4,7 +4,6 @@ import com.example.simplertmp.amf.AmfNumber
 import com.example.simplertmp.amf.AmfString
 import com.example.simplertmp.io.ChunkStreamInfo
 import java.io.IOException
-import java.io.InputStream
 import java.io.OutputStream
 
 
@@ -21,6 +20,9 @@ import java.io.OutputStream
 class Command : VariableBodyRtmpPacket {
     var commandName: String = ""
     var transactionId: Int = 0
+        set(param) {
+            field += param
+        }
 
     override var array: ByteArray? = null
     override var size: Int = 0
@@ -37,8 +39,7 @@ class Command : VariableBodyRtmpPacket {
                             ChunkStreamInfo.RTMP_CID_OVER_CONNECTION.toInt(),
                             RtmpHeader.MessageType.COMMAND_AMF0
                     )
-            )
-    {
+            ) {
         this.commandName = commandName
         this.transactionId = transactionId
     }
@@ -52,11 +53,19 @@ class Command : VariableBodyRtmpPacket {
     @Throws(IOException::class)
     override fun readBody(input: ByteArray) {
         // The command name and transaction ID are always present (AMF string followed by number)
-        commandName = AmfString.readStringFrom(input, false)
+        commandName = AmfString.readStringFrom(input.drop(1).toByteArray())
         var bytesRead: Int = AmfString.sizeOf(commandName, false)
-        transactionId = AmfNumber.readNumberFrom(input.drop(bytesRead).toByteArray()).toInt()
-        bytesRead += AmfNumber.size
-        readVariableData(input, bytesRead)
+        if (bytesRead + AmfNumber.size <= input.size) {
+            transactionId =
+                    AmfNumber.readNumberFrom(input.drop(bytesRead + 1).toByteArray()).toInt()
+            bytesRead += AmfNumber.size
+            readVariableData(input, bytesRead)
+        } else {
+            transactionId =
+                    0
+            return
+        }
+
     }
 
     @Throws(IOException::class)

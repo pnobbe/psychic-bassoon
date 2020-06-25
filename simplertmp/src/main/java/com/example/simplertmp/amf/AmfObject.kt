@@ -12,15 +12,11 @@ import java.util.*
  */
 open class AmfObject : AmfData {
     var properties: MutableMap<String, AmfData> = LinkedHashMap()
-    override var size = -1
+    override var size = 4 // object marker + end of object marker
         get() {
-            if (field == -1) {
-                field = 1 // object marker
-                for ((key, value) in properties) {
-                    field += AmfString.sizeOf(key, true)
-                    field += value.size
-                }
-                field += 3 // end of object marker
+            for ((key, value) in properties) {
+                field += AmfString.sizeOf(key, true)
+                field += value.size
             }
             return field
         }
@@ -67,24 +63,19 @@ open class AmfObject : AmfData {
 
     @Throws(IOException::class)
     override fun readFrom(input: ByteArray) {
-        size = 0
-        while (size <= input.size) {
+        var index = 0
+        while (index <= input.size) {
             // Look for the 3-byte object end marker [0x00 0x00 0x09]
-            if (
-                    input[size] == OBJECT_END_MARKER[0] &&
-                    input[size + 1] == OBJECT_END_MARKER[1] &&
-                    input[size + 2] == OBJECT_END_MARKER[2]
-            ) {
+            if (input.copyOfRange(index, index + 3).contentEquals(OBJECT_END_MARKER)) {
                 // End marker found
-                size += 3
                 return
             } else {
                 // End marker not found; read the property key...
-                val key: String = AmfString.readStringFrom(input.drop(size).toByteArray(), true)
-                size += AmfString.sizeOf(key, true)
+                val key: String = AmfString.readStringFrom(input.drop(index).toByteArray())
+                index += AmfString.sizeOf(key, true)
                 // ...and the property value
-                val value = AmfDecoder.readFrom(input.drop(size).toByteArray())
-                size += value.size
+                val value = AmfDecoder.readFrom(input.drop(index).toByteArray())
+                index += value.size
                 properties[key] = value
             }
         }
